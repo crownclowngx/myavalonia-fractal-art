@@ -4,19 +4,20 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:vm="using:FractalArtPlugin.Features.Artwork"
     x:DataType="vm:FractalArtworkDocument">
-  <Grid Background="#0A0E1C" RowDefinitions="Auto,*,Auto">
+  <Grid Background="#0A0E1C" RowDefinitions="Auto,*,Auto,Auto">
     <Border Grid.Row="0" Padding="14,10" Background="#12182B" BorderBrush="#27304A" BorderThickness="0,0,0,1">
-      <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto,Auto" ColumnSpacing="8">
+      <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto,Auto" ColumnSpacing="8">
         <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="20" FontWeight="SemiBold" Foreground="#F2F5FF" Text="分形作品" />
         <Button Grid.Column="1" Command="{Binding UndoCommand}" Content="撤销" IsEnabled="{Binding CanUndo}" />
         <Button Grid.Column="2" Command="{Binding RedoCommand}" Content="重做" IsEnabled="{Binding CanRedo}" />
-        <CheckBox Grid.Column="4" VerticalAlignment="Center" Foreground="#D4DAED" Content="精细预览" IsChecked="{Binding HighQualityPreview}" />
-        <Button Grid.Column="5" Command="{Binding RefreshPreviewCommand}" Content="重新预览" />
-        <Button Grid.Column="6" Command="{Binding ExportPngCommand}" Content="导出 PNG" />
+        <Button Grid.Column="3" Command="{Binding GenerateVariationsCommand}" Content="生成九宫格" />
+        <CheckBox Grid.Column="5" VerticalAlignment="Center" Foreground="#D4DAED" Content="精细预览" IsChecked="{Binding HighQualityPreview}" />
+        <Button Grid.Column="6" Command="{Binding RefreshPreviewCommand}" Content="重新预览" />
+        <Button Grid.Column="7" Command="{Binding ExportPngCommand}" Content="导出 PNG" />
       </Grid>
     </Border>
 
-    <Grid Grid.Row="1" ColumnDefinitions="150,*,300">
+    <Grid Grid.Row="1" ColumnDefinitions="150,*,330">
       <Border Grid.Column="0" Padding="12" Background="#0E1425" BorderBrush="#27304A" BorderThickness="0,0,1,0">
         <StackPanel Spacing="8">
           <TextBlock Margin="4,0,0,8" FontSize="12" Foreground="#8791AD" Text="创作导航" />
@@ -26,7 +27,7 @@
           <Button HorizontalContentAlignment="Left" Content="效果（后续阶段）" IsEnabled="False" />
           <Button HorizontalContentAlignment="Left" Content="动画（后续阶段）" IsEnabled="False" />
           <Border Margin="0,12,0,0" Padding="10" Background="#182038" CornerRadius="6">
-            <TextBlock Foreground="#AEB8D2" Text="G0003 已提供 Julia 单生成器；未实现的能力明确禁用，不以占位按钮伪造。" TextWrapping="Wrap" />
+            <TextBlock Foreground="#AEB8D2" Text="G0004 已提供 Julia 九宫格变体、分组锁定、收藏和艺术参数；公式、图层与效果仍按后续阶段推进。" TextWrapping="Wrap" />
           </Border>
         </StackPanel>
       </Border>
@@ -65,6 +66,45 @@
           <NumericUpDown Minimum="-9223372036854775808" Maximum="9223372036854775807" Value="{Binding Seed}" PlaceholderText="Seed" />
 
           <Separator Margin="0,6" />
+          <TextBlock Foreground="#8791AD" Text="视觉预设" />
+          <WrapPanel Orientation="Horizontal">
+            <Button Margin="0,0,6,6" Command="{Binding ApplyArtworkPresetCommand}" CommandParameter="amber-bloom" Content="暮金花火" />
+            <Button Margin="0,0,6,6" Command="{Binding ApplyArtworkPresetCommand}" CommandParameter="ocean-velvet" Content="深海丝绒" />
+            <Button Margin="0,0,6,6" Command="{Binding ApplyArtworkPresetCommand}" CommandParameter="neon-coral" Content="霓虹珊瑚" />
+          </WrapPanel>
+
+          <TextBlock Foreground="#8791AD" Text="艺术化参数（0–100）" />
+          <TextBlock Foreground="#BFC7DB" Text="细节" />
+          <Slider Minimum="0" Maximum="100" TickFrequency="1" Value="{Binding Detail}" />
+          <TextBlock Foreground="#BFC7DB" Text="流动" />
+          <Slider Minimum="0" Maximum="100" TickFrequency="1" Value="{Binding Flow}" />
+          <TextBlock Foreground="#BFC7DB" Text="卷曲" />
+          <Slider Minimum="0" Maximum="100" TickFrequency="1" Value="{Binding Curl}" />
+          <TextBlock Foreground="#8791AD" Text="艺术滑杆直接映射下方真实 Julia 参数，不保存第二份状态。" TextWrapping="Wrap" />
+
+          <Separator Margin="0,6" />
+          <TextBlock Foreground="#8791AD" Text="变体探索" />
+          <TextBlock Foreground="#BFC7DB" Text="变异强度（0.05–1.00）" />
+          <NumericUpDown Minimum="0.05" Maximum="1" Increment="0.05" FormatString="0.00" Value="{Binding MutationStrength}" />
+          <WrapPanel Orientation="Horizontal">
+            <Button Margin="0,0,6,6" Command="{Binding SetVariationModeCommand}" CommandParameter="All" Content="全部" />
+            <Button Margin="0,0,6,6" Command="{Binding SetVariationModeCommand}" CommandParameter="ShapeOnly" Content="只变形态" />
+            <Button Margin="0,0,6,6" Command="{Binding SetVariationModeCommand}" CommandParameter="TextureOnly" Content="只变质感" />
+          </WrapPanel>
+          <TextBlock Foreground="#D4DAED" Text="{Binding VariationModeName, StringFormat='当前：{0}'}" />
+          <WrapPanel Orientation="Horizontal">
+            <CheckBox Margin="0,0,10,4" Foreground="#D4DAED" Content="锁 Seed" IsChecked="{Binding IsSeedLocked}" />
+            <CheckBox Margin="0,0,10,4" Foreground="#D4DAED" Content="锁构图" IsChecked="{Binding IsCompositionLocked}" />
+            <CheckBox Margin="0,0,10,4" Foreground="#D4DAED" Content="锁形态" IsChecked="{Binding IsShapeLocked}" />
+            <CheckBox Margin="0,0,10,4" Foreground="#D4DAED" Content="锁颜色" IsChecked="{Binding IsColorLocked}" />
+          </WrapPanel>
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <CheckBox Foreground="#77819D" Content="公式固定为 Julia" IsChecked="True" IsEnabled="False" />
+            <CheckBox Foreground="#77819D" Content="效果尚未启用" IsChecked="True" IsEnabled="False" />
+          </StackPanel>
+          <Button Command="{Binding GenerateVariationsCommand}" Content="生成 9 个可重现候选" />
+
+          <Separator Margin="0,6" />
           <TextBlock Foreground="#8791AD" Text="Julia 形态" />
           <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
             <TextBox Grid.Column="0" Text="{Binding CenterX}" PlaceholderText="中心 X" />
@@ -82,6 +122,11 @@
 
           <Separator Margin="0,6" />
           <TextBlock Foreground="#8791AD" Text="线性渐变" />
+          <WrapPanel Orientation="Horizontal">
+            <Button Margin="0,0,6,6" Command="{Binding ApplyPalettePresetCommand}" CommandParameter="gold" Content="琥珀金" />
+            <Button Margin="0,0,6,6" Command="{Binding ApplyPalettePresetCommand}" CommandParameter="cyan" Content="极光青" />
+            <Button Margin="0,0,6,6" Command="{Binding ApplyPalettePresetCommand}" CommandParameter="magenta" Content="玫紫夜" />
+          </WrapPanel>
           <TextBox Text="{Binding GradientStartHex}" PlaceholderText="起始 #RRGGBBAA" />
           <TextBox Text="{Binding GradientEndHex}" PlaceholderText="结束 #RRGGBBAA" />
 
@@ -90,7 +135,57 @@
       </ScrollViewer>
     </Grid>
 
-    <Border Grid.Row="2" Padding="12,8" Background="#12182B" BorderBrush="#27304A" BorderThickness="0,1,0,0">
+    <Border Grid.Row="2" MaxHeight="230" Padding="12,8" Background="#0E1425" BorderBrush="#27304A" BorderThickness="0,1,0,0">
+      <Grid RowDefinitions="Auto,Auto" RowSpacing="6">
+        <ScrollViewer Grid.Row="0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+          <ItemsControl ItemsSource="{Binding VariationCandidates}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <StackPanel Orientation="Horizontal" Spacing="8" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Border Width="150" Padding="6" Background="#182038" BorderBrush="#394463" BorderThickness="1" CornerRadius="6">
+                  <StackPanel Spacing="5">
+                    <Image Height="82" Source="{Binding PreviewImage}" Stretch="UniformToFill" />
+                    <Grid ColumnDefinitions="*,Auto">
+                      <TextBlock Grid.Column="0" Foreground="#F2F5FF" Text="{Binding Title}" />
+                      <TextBlock Grid.Column="1" Foreground="#FFD166" IsVisible="{Binding IsFavorite}" Text="★" />
+                    </Grid>
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                      <Button Padding="7,3" Click="HandleApplyVariation" Content="采用" />
+                      <Button Padding="7,3" Click="HandleToggleFavorite" Content="收藏" />
+                      <Button Padding="7,3" Click="HandleContinueVariation" Content="续变" />
+                    </StackPanel>
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="6">
+          <TextBlock VerticalAlignment="Center" Foreground="#8791AD" Text="收藏：" />
+          <ItemsControl ItemsSource="{Binding Favorites}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <StackPanel Orientation="Horizontal" Spacing="6" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <StackPanel Orientation="Horizontal" Spacing="3">
+                  <Button Click="HandleRestoreFavorite" Content="{Binding Name}" />
+                  <Button Click="HandleContinueFavorite" Content="续变" />
+                </StackPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <Border Grid.Row="3" Padding="12,8" Background="#12182B" BorderBrush="#27304A" BorderThickness="0,1,0,0">
       <TextBlock Foreground="#BFC7DB" Text="{Binding StatusMessage}" TextTrimming="CharacterEllipsis" />
     </Border>
   </Grid>

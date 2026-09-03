@@ -51,7 +51,59 @@ public sealed record GradientDefinition(RgbaColor Start, RgbaColor End, RgbaColo
 public sealed record ArtworkPresentationDefinition(string SelectedSection, bool HighQualityPreview);
 
 /// <summary>
-/// 完整且不可变的作品配方。运行时诊断没有混入此对象，所以 v2 往返不会受机器核心数或策略选择影响。
+/// 可独立重放的渲染配方。候选和收藏只保存影响画面的真实参数，不复制画布、呈现状态或探索状态，
+/// 从而避免在作品快照中形成递归对象图。
+/// </summary>
+public sealed record VariationRecipeDefinition(
+    long Seed,
+    JuliaDefinition Julia,
+    GradientDefinition Gradient);
+
+public sealed record VariationCandidateDefinition(
+    string Id,
+    int Number,
+    VariationRecipeDefinition Recipe);
+
+public sealed record FavoriteVariationDefinition(
+    string Id,
+    string Name,
+    VariationRecipeDefinition Recipe);
+
+[Flags]
+public enum VariationLockGroups
+{
+    None = 0,
+    Seed = 1,
+    Composition = 2,
+    Shape = 4,
+    Color = 8
+}
+
+public enum VariationMode
+{
+    All,
+    ShapeOnly,
+    TextureOnly
+}
+
+/// <summary>
+/// 探索状态属于作品配方：强度、锁定、轮次及候选决定下一轮随机序列，候选和收藏则保证保存后仍可恢复。
+/// 缩略图是可重新计算的运行时缓存，刻意不进入这里。
+/// </summary>
+public sealed record ArtworkExplorationDefinition(
+    double MutationStrength,
+    VariationLockGroups Locks,
+    VariationMode Mode,
+    int Generation,
+    IReadOnlyList<VariationCandidateDefinition> Candidates,
+    IReadOnlyList<FavoriteVariationDefinition> Favorites)
+{
+    public static ArtworkExplorationDefinition CreateDefault() =>
+        new(0.35, VariationLockGroups.None, VariationMode.All, 0, [], []);
+}
+
+/// <summary>
+/// 完整且不可变的作品配方。运行时诊断没有混入此对象，所以快照往返不会受机器核心数或策略选择影响。
 /// </summary>
 public sealed record ArtworkDefinition(
     int FormatVersion,
@@ -59,9 +111,10 @@ public sealed record ArtworkDefinition(
     CanvasDefinition Canvas,
     JuliaDefinition Julia,
     GradientDefinition Gradient,
-    ArtworkPresentationDefinition Presentation)
+    ArtworkPresentationDefinition Presentation,
+    ArtworkExplorationDefinition Exploration)
 {
-    public const int CurrentFormatVersion = 2;
+    public const int CurrentFormatVersion = 3;
 
     public static ArtworkDefinition CreateDefault() => new(
         CurrentFormatVersion,
@@ -69,5 +122,19 @@ public sealed record ArtworkDefinition(
         new CanvasDefinition(1200, 800, new RgbaColor(10, 14, 28)),
         new JuliaDefinition("0", "0", "3.2", "-0.745", "0.113", 320, false, 96),
         new GradientDefinition(new RgbaColor(20, 31, 74), new RgbaColor(248, 167, 63), new RgbaColor(3, 5, 12)),
-        new ArtworkPresentationDefinition("生成", false));
+        new ArtworkPresentationDefinition("生成", false),
+        ArtworkExplorationDefinition.CreateDefault());
+
+    /// <summary>从当前作品提取能够独立重放画面的最小配方。</summary>
+    public VariationRecipeDefinition ToVariationRecipe() => new(Seed, Julia, Gradient);
+
+    /// <summary>
+    /// 把候选配方应用到当前作品；画布、探索收藏和 UI 呈现由当前 Document 保留，避免“采用候选”意外改掉工作区。
+    /// </summary>
+    public ArtworkDefinition ApplyVariationRecipe(VariationRecipeDefinition recipe) => this with
+    {
+        Seed = recipe.Seed,
+        Julia = recipe.Julia,
+        Gradient = recipe.Gradient
+    };
 }

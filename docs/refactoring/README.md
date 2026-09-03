@@ -1,4 +1,4 @@
-# G0001–G0003 重构实施档案
+# G0001–G0004 重构实施档案
 
 本目录独立保存 Fractal Art 产品化重构的专业文档，避免把阶段性决策、实施细节和验收证据散落在产品愿景中。
 产品长期路线仍以 [`product-shape-and-implementation-plan.md`](../product-shape-and-implementation-plan.md) 为基线。
@@ -10,6 +10,7 @@
 | G0001 模板清理与产品身份冻结 | [计划](G0001/plan.md) | [方案](G0001/implementation.md) | [结果](G0001/result.md) |
 | G0002 作品领域模型与空持久化闭环 | [计划](G0002/plan.md) | [方案](G0002/implementation.md) | [结果](G0002/result.md) |
 | G0003 第一条 Julia 纵向渲染切片 | [计划](G0003/plan.md) | [方案](G0003/implementation.md) | [结果](G0003/result.md) |
+| G0004 变体探索与艺术化参数 | [计划](G0004/plan.md) | [方案](G0004/implementation.md) | [结果](G0004/result.md) |
 
 G0003 后续的高精度性能与 Domain 模块化工作已独立实施并完成本地自动化，见
 [专项计划](G0003/precision-performance/plan.md)、[优化设计](G0003/precision-performance/optimization-design.md)、

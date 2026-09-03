@@ -16,6 +16,10 @@ public static class FractalArtPluginServices
         services.AddSingleton<IJuliaFieldGenerator, JuliaFieldGenerator>();
         services.AddSingleton<IGradientMapper, LinearGradientMapper>();
         services.AddSingleton<IArtworkRenderPipeline, ArtworkRenderPipeline>();
+        services.AddSingleton<IArtisticParameterMapper, ArtisticParameterMapper>();
+        services.AddSingleton<IVariationGenerator, VariationGenerator>();
+        services.AddSingleton<IVariationExplorer, VariationExplorer>();
+        services.AddSingleton<IArtworkPresetCatalog, ArtworkPresetCatalog>();
         services.AddSingleton<IPngEncoder, PngEncoder>();
         services.AddSingleton<IAtomicFileWriter, AtomicFileWriter>();
         services.AddSingleton<IArtworkExporter, ArtworkExporter>();

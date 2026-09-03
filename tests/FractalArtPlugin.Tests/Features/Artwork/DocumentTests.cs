@@ -194,6 +194,55 @@ public sealed class DocumentTests
         Assert.Contains("配置精度不足", document.StatusMessage, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task 九宫格采用收藏恢复与续变都通过Document历史和配方工作()
+    {
+        using var fixture = new DocumentFixture();
+        var document = fixture.CreateDocument();
+        await document.InitializeAsync(new NewDocumentActivation("变体闭环"), CancellationToken.None);
+        var original = document.Artwork.ToVariationRecipe();
+
+        await document.GenerateVariationsCommand.ExecuteAsync(null);
+
+        Assert.Equal(9, document.VariationCandidates.Count);
+        Assert.Equal(1, document.Artwork.Exploration.Generation);
+        var selected = document.VariationCandidates[0];
+        document.ToggleFavoriteCommand.Execute(selected);
+        Assert.Single(document.Favorites);
+        document.ApplyVariationCommand.Execute(selected);
+        Assert.Equal(selected.Definition.Recipe, document.Artwork.ToVariationRecipe());
+        Assert.NotEqual(original, document.Artwork.ToVariationRecipe());
+
+        document.UndoCommand.Execute(null);
+        Assert.Equal(original, document.Artwork.ToVariationRecipe());
+        document.RestoreFavoriteCommand.Execute(document.Favorites[0]);
+        Assert.Equal(selected.Definition.Recipe, document.Artwork.ToVariationRecipe());
+
+        var snapshot = await document.CaptureSaveSnapshotAsync(CancellationToken.None);
+        var restored = new ArtworkSnapshotCodec(new ArtworkValidator()).Decode(snapshot.Content);
+        Assert.Single(restored.Exploration.Favorites);
+        Assert.Equal(selected.Definition.Recipe, restored.Exploration.Favorites[0].Recipe);
+    }
+
+    [Fact]
+    public async Task 取消九宫格不会污染当前作品或上一批候选()
+    {
+        var pipeline = new BlockingVariationPipeline();
+        using var fixture = new DocumentFixture(pipeline);
+        var document = fixture.CreateDocument();
+        await document.InitializeAsync(new NewDocumentActivation("取消变体"), CancellationToken.None);
+        var before = document.Artwork;
+
+        var explore = document.GenerateVariationsCommand.ExecuteAsync(null);
+        await pipeline.VariationStarted.WaitAsync(TimeSpan.FromSeconds(5));
+        document.CancelOperationCommand.Execute(null);
+        await explore;
+
+        Assert.Equal(before, document.Artwork);
+        Assert.Empty(document.VariationCandidates);
+        Assert.Contains("保持不变", document.StatusMessage, StringComparison.Ordinal);
+    }
+
     private static async Task WaitUntilAsync(Func<bool> predicate)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -218,6 +267,7 @@ public sealed class DocumentTests
         public FractalArtworkDocument CreateDocument()
         {
             var validator = new ArtworkValidator();
+            var generator = new VariationGenerator(validator);
             return new FractalArtworkDocument(
                 validator,
                 new ArtworkSnapshotCodec(validator),
@@ -226,6 +276,9 @@ public sealed class DocumentTests
                 new NullExporter(),
                 new NullExportDialog(),
                 new ArtworkHistory(),
+                new ArtisticParameterMapper(),
+                new VariationExplorer(generator, _pipeline),
+                new ArtworkPresetCatalog(),
                 _lifetime);
         }
 
@@ -317,6 +370,28 @@ public sealed class DocumentTests
             }
 
             return Task.FromResult(ControlledPipeline.CreateImage(artwork.Julia.ConstantReal));
+        }
+    }
+
+    private sealed class BlockingVariationPipeline : IArtworkRenderPipeline
+    {
+        private int _calls;
+        private readonly TaskCompletionSource _variationStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public Task VariationStarted => _variationStarted.Task;
+
+        public async Task<RgbaImage> RenderAsync(
+            ArtworkDefinition artwork,
+            RenderContext context,
+            CancellationToken cancellationToken)
+        {
+            if (Interlocked.Increment(ref _calls) == 1)
+            {
+                return ControlledPipeline.CreateImage(artwork.Julia.ConstantReal);
+            }
+
+            _variationStarted.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            throw new InvalidOperationException("取消后不应到达此处。");
         }
     }
 

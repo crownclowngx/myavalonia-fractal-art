@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
 using System.ComponentModel;
+using Avalonia.Interactivity;
 
 namespace FractalArtPlugin.Features.Artwork;
 
@@ -132,6 +133,55 @@ public sealed partial class FractalArtworkView : UserControl
         if (DataContext is FractalArtworkDocument document)
         {
             document.EndViewportInteraction();
+        }
+    }
+
+    /// <summary>
+    /// 候选卡片位于 DataTemplate 内，按钮的 DataContext 是候选而非 Document。代码隐藏只负责把模板事件
+    /// 转成 Document 命令调用，不读取或修改任何领域参数。
+    /// </summary>
+    private void HandleApplyVariation(object? sender, RoutedEventArgs eventArgs)
+    {
+        if (DataContext is FractalArtworkDocument document &&
+            sender is Button { DataContext: VariationCandidateItem item })
+        {
+            document.ApplyVariationCommand.Execute(item);
+        }
+    }
+
+    private void HandleToggleFavorite(object? sender, RoutedEventArgs eventArgs)
+    {
+        if (DataContext is FractalArtworkDocument document &&
+            sender is Button { DataContext: VariationCandidateItem item })
+        {
+            document.ToggleFavoriteCommand.Execute(item);
+        }
+    }
+
+    private async void HandleContinueVariation(object? sender, RoutedEventArgs eventArgs)
+    {
+        if (DataContext is FractalArtworkDocument document &&
+            sender is Button { DataContext: VariationCandidateItem item })
+        {
+            await document.ContinueFromVariationCommand.ExecuteAsync(item);
+        }
+    }
+
+    private void HandleRestoreFavorite(object? sender, RoutedEventArgs eventArgs)
+    {
+        if (DataContext is FractalArtworkDocument document &&
+            sender is Button { DataContext: FavoriteVariationDefinition favorite })
+        {
+            document.RestoreFavoriteCommand.Execute(favorite);
+        }
+    }
+
+    private async void HandleContinueFavorite(object? sender, RoutedEventArgs eventArgs)
+    {
+        if (DataContext is FractalArtworkDocument document &&
+            sender is Button { DataContext: FavoriteVariationDefinition favorite })
+        {
+            await document.ContinueFromFavoriteCommand.ExecuteAsync(favorite);
         }
     }
 }

@@ -44,7 +44,7 @@ public sealed class PersistenceTests
     public void 未知作品格式版本被明确拒绝且不会静默迁移()
     {
         var valid = _codec.Encode(ArtworkDefinition.CreateDefault());
-        var json = valid.Payload.GetRawText().Replace("\"formatVersion\":2", "\"formatVersion\":99", StringComparison.Ordinal);
+        var json = valid.Payload.GetRawText().Replace("\"formatVersion\":3", "\"formatVersion\":99", StringComparison.Ordinal);
         using var payload = JsonDocument.Parse(json);
         var content = new DocumentContent(ArtworkSnapshotCodec.ContentSchemaVersion, payload.RootElement);
 
@@ -60,7 +60,7 @@ public sealed class PersistenceTests
             ArtworkSnapshotCodec.ContentSchemaVersion,
             JsonSerializer.SerializeToElement(new
             {
-                formatVersion = 2,
+                formatVersion = 3,
                 seed = 1,
                 canvas = new { width = 800, height = 600, background = "#000000FF" }
             }));
@@ -82,6 +82,19 @@ public sealed class PersistenceTests
             defaultArtwork with { Julia = defaultArtwork.Julia with { ConstantReal = "NaN" } }));
         Assert.Throws<InvalidDataException>(() => validator.Validate(
             defaultArtwork with { Julia = defaultArtwork.Julia with { CenterX = "1e-100000" } }));
+        Assert.Throws<InvalidDataException>(() => validator.Validate(
+            defaultArtwork with
+            {
+                Exploration = defaultArtwork.Exploration with { MutationStrength = 0 }
+            }));
+        Assert.Throws<InvalidDataException>(() => validator.Validate(
+            defaultArtwork with
+            {
+                Exploration = defaultArtwork.Exploration with
+                {
+                    Candidates = [new VariationCandidateDefinition("only-one", 1, defaultArtwork.ToVariationRecipe())]
+                }
+            }));
     }
 
     [Fact]
@@ -114,7 +127,7 @@ public sealed class PersistenceTests
     }
 
     [Fact]
-    public void V2快照不保存有效精度线程数内核或暂态预览状态()
+    public void V3快照保存探索配方但不保存运行态缩略图或渲染诊断()
     {
         var content = _codec.Encode(ArtworkDefinition.CreateDefault());
         var json = content.Payload.GetRawText();
@@ -123,6 +136,67 @@ public sealed class PersistenceTests
         Assert.DoesNotContain("maxDegree", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("kernel", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("transient", json, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(2, content.Payload.GetProperty("formatVersion").GetInt32());
+        Assert.DoesNotContain("previewImage", json, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(3, content.Payload.GetProperty("formatVersion").GetInt32());
+        Assert.True(content.Payload.TryGetProperty("exploration", out _));
+    }
+
+    [Fact]
+    public void V2作品显式迁移为空探索状态且不改变渲染配方()
+    {
+        var payload = JsonSerializer.SerializeToElement(new
+        {
+            formatVersion = 2,
+            seed = 42,
+            canvas = new { width = 800, height = 600, background = "#010203FF" },
+            julia = new
+            {
+                centerX = "0",
+                centerY = "0",
+                scale = "3.2",
+                constantReal = "-0.8",
+                constantImaginary = "0.156",
+                maxIterations = 320,
+                forceHighPrecision = false,
+                precisionDigits = 96
+            },
+            gradient = new { start = "#000000FF", end = "#FFFFFFFF", interior = "#010101FF" },
+            presentation = new { selectedSection = "生成", highQualityPreview = false }
+        });
+
+        var migrated = _codec.Decode(new DocumentContent(ArtworkSnapshotCodec.ContentSchemaVersion, payload));
+
+        Assert.Equal(3, migrated.FormatVersion);
+        Assert.Equal(42, migrated.Seed);
+        Assert.Equal("-0.8", migrated.Julia.ConstantReal);
+        Assert.Empty(migrated.Exploration.Candidates);
+        Assert.Empty(migrated.Exploration.Favorites);
+        Assert.Equal(0, migrated.Exploration.Generation);
+    }
+
+    [Fact]
+    public void 候选锁定与收藏配方完整往返()
+    {
+        var source = ArtworkDefinition.CreateDefault();
+        var recipe = source.ToVariationRecipe() with { Seed = 99 };
+        var expected = source with
+        {
+            Exploration = new ArtworkExplorationDefinition(
+                0.6,
+                VariationLockGroups.Seed | VariationLockGroups.Color,
+                VariationMode.ShapeOnly,
+                7,
+                Enumerable.Range(1, 9).Select(index =>
+                    new VariationCandidateDefinition($"g000007-c{index:D2}", index, recipe)).ToArray(),
+                [new FavoriteVariationDefinition("fav-g000007-c01", "第 7 轮 · 变体 1", recipe)])
+        };
+
+        var restored = _codec.Decode(_codec.Encode(expected));
+
+        Assert.Equal(expected.Exploration.MutationStrength, restored.Exploration.MutationStrength);
+        Assert.Equal(expected.Exploration.Locks, restored.Exploration.Locks);
+        Assert.Equal(expected.Exploration.Mode, restored.Exploration.Mode);
+        Assert.Equal(expected.Exploration.Candidates, restored.Exploration.Candidates);
+        Assert.Equal(expected.Exploration.Favorites, restored.Exploration.Favorites);
     }
 }

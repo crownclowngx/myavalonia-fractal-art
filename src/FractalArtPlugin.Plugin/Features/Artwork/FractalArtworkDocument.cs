@@ -1,4 +1,5 @@
 using Avalonia.Media.Imaging;
+using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FractalArtPlugin.Application;
@@ -20,14 +21,19 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
     private readonly IArtworkExporter _exporter;
     private readonly IArtworkExportDialog _exportDialog;
     private readonly IArtworkHistory _history;
+    private readonly IArtisticParameterMapper _artisticParameterMapper;
+    private readonly IVariationExplorer _variationExplorer;
+    private readonly IArtworkPresetCatalog _presetCatalog;
     private readonly IDocumentLifetime _lifetime;
     private ArtworkDefinition _artwork = ArtworkDefinition.CreateDefault();
     private DocumentPresentationState _presentation = new("分形作品");
     private CancellationTokenSource? _previewCancellation;
     private CancellationTokenSource? _exportCancellation;
+    private CancellationTokenSource? _variationCancellation;
     private long _previewGeneration;
     private long _revision;
     private long _acceptedRevision;
+    private long _variationGeneration;
     private ArtworkDefinition? _viewportInteractionStart;
     private bool _disposed;
 
@@ -39,6 +45,9 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         IArtworkExporter exporter,
         IArtworkExportDialog exportDialog,
         IArtworkHistory history,
+        IArtisticParameterMapper artisticParameterMapper,
+        IVariationExplorer variationExplorer,
+        IArtworkPresetCatalog presetCatalog,
         IDocumentLifetime lifetime)
     {
         _validator = validator;
@@ -48,12 +57,16 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         _exporter = exporter;
         _exportDialog = exportDialog;
         _history = history;
+        _artisticParameterMapper = artisticParameterMapper;
+        _variationExplorer = variationExplorer;
+        _presetCatalog = presetCatalog;
         _lifetime = lifetime;
     }
 
     [ObservableProperty] private Bitmap? _previewImage;
     [ObservableProperty] private bool _isRendering;
     [ObservableProperty] private bool _isExporting;
+    [ObservableProperty] private bool _isExploring;
     [ObservableProperty] private string _statusMessage = "正在准备 Julia 预览…";
     [ObservableProperty] private string _lastPreviewFingerprint = string.Empty;
     [ObservableProperty] private TransientPreviewTransform _transientPreview = TransientPreviewTransform.Identity;
@@ -62,10 +75,72 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
     public bool IsDirty => _revision != _acceptedRevision;
     public bool CanUndo => _history.CanUndo;
     public bool CanRedo => _history.CanRedo;
-    public bool IsOperationBusy => IsRendering || IsExporting;
+    public bool IsOperationBusy => IsRendering || IsExporting || IsExploring;
     public bool IsPreviewEmpty => PreviewImage is null;
 
     internal ArtworkDefinition Artwork => _artwork;
+    public ObservableCollection<VariationCandidateItem> VariationCandidates { get; } = [];
+    public IReadOnlyList<FavoriteVariationDefinition> Favorites => _artwork.Exploration.Favorites;
+    public IReadOnlyList<ArtworkPresetDefinition> ArtworkPresets => _presetCatalog.ArtworkPresets;
+    public IReadOnlyList<PalettePresetDefinition> PalettePresets => _presetCatalog.PalettePresets;
+
+    /// <summary>
+    /// 艺术滑杆每次都从 Julia 真实参数反算，setter 也立即写回 Julia；快照中不存在 Detail/Flow/Curl 副本。
+    /// </summary>
+    public int Detail
+    {
+        get => _artisticParameterMapper.Read(_artwork.Julia).Detail;
+        set => TryMutate(_artwork with { Julia = _artisticParameterMapper.SetDetail(_artwork.Julia, value) });
+    }
+
+    public int Flow
+    {
+        get => _artisticParameterMapper.Read(_artwork.Julia).Flow;
+        set => TryMutate(_artwork with { Julia = _artisticParameterMapper.SetFlow(_artwork.Julia, value) });
+    }
+
+    public int Curl
+    {
+        get => _artisticParameterMapper.Read(_artwork.Julia).Curl;
+        set => TryMutate(_artwork with { Julia = _artisticParameterMapper.SetCurl(_artwork.Julia, value) });
+    }
+
+    public double MutationStrength
+    {
+        get => _artwork.Exploration.MutationStrength;
+        set => TryMutateExploration(_artwork.Exploration with { MutationStrength = Math.Round(value, 2) });
+    }
+
+    public bool IsSeedLocked
+    {
+        get => IsLocked(VariationLockGroups.Seed);
+        set => SetLock(VariationLockGroups.Seed, value);
+    }
+
+    public bool IsCompositionLocked
+    {
+        get => IsLocked(VariationLockGroups.Composition);
+        set => SetLock(VariationLockGroups.Composition, value);
+    }
+
+    public bool IsShapeLocked
+    {
+        get => IsLocked(VariationLockGroups.Shape);
+        set => SetLock(VariationLockGroups.Shape, value);
+    }
+
+    public bool IsColorLocked
+    {
+        get => IsLocked(VariationLockGroups.Color);
+        set => SetLock(VariationLockGroups.Color, value);
+    }
+
+    public string VariationModeName => _artwork.Exploration.Mode switch
+    {
+        VariationMode.ShapeOnly => "只改变形态",
+        VariationMode.TextureOnly => "只改变质感",
+        _ => "形态与质感"
+    };
 
     public int CanvasWidth
     {
@@ -200,6 +275,10 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         PresentationChanged?.Invoke(this, EventArgs.Empty);
         NotifyArtworkProperties();
         await RenderPreviewCoreAsync(debounce: false, cancellationToken).ConfigureAwait(true);
+        if (_artwork.Exploration.Candidates.Count > 0)
+        {
+            await RestoreVariationPreviewsAsync(cancellationToken).ConfigureAwait(true);
+        }
     }
 
     public ValueTask<DocumentSaveSnapshot> CaptureSaveSnapshotAsync(CancellationToken cancellationToken)
@@ -246,6 +325,174 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         }
 
         ApplyHistory(_history.Redo(_artwork));
+    }
+
+    /// <summary>
+    /// 一整批九宫格只有在配方和全部缩略图都成功完成后才提交到作品。取消、异常或迟到批次都不会改变
+    /// 当前作品、历史和候选集合，这与主预览的 generation 提交规则保持一致。
+    /// </summary>
+    [RelayCommand]
+    private async Task GenerateVariationsAsync()
+    {
+        CancelAndDispose(ref _variationCancellation);
+        _variationCancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.ClosingToken);
+        var current = _variationCancellation;
+        var token = current.Token;
+        var generation = Interlocked.Increment(ref _variationGeneration);
+        IsExploring = true;
+        StatusMessage = "正在以最多 3 路并发生成九宫格变体…";
+        try
+        {
+            var source = _artwork;
+            var result = await _variationExplorer.ExploreAsync(source, 9, token).ConfigureAwait(true);
+            token.ThrowIfCancellationRequested();
+            if (generation != Volatile.Read(ref _variationGeneration) || _disposed || _lifetime.IsClosing)
+            {
+                return;
+            }
+
+            var exploration = source.Exploration with
+            {
+                Generation = result.Batch.Generation,
+                Candidates = result.Batch.Candidates
+            };
+            Mutate(source with { Exploration = exploration }, renderPreview: false);
+            ReplaceVariationItems(result.RenderedCandidates);
+            var cacheHits = result.RenderedCandidates.Count(item => item.FromCache);
+            StatusMessage = $"第 {result.Batch.Generation} 轮变体完成 · 9 个候选 · 缓存命中 {cacheHits}。";
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            if (generation == Volatile.Read(ref _variationGeneration) && !_lifetime.IsClosing)
+            {
+                StatusMessage = "变体生成已取消，当前作品和上一批候选保持不变。";
+            }
+        }
+        catch (Exception exception)
+        {
+            if (generation == Volatile.Read(ref _variationGeneration))
+            {
+                StatusMessage = $"变体生成失败：{exception.Message}";
+            }
+        }
+        finally
+        {
+            if (Interlocked.CompareExchange(ref _variationCancellation, null, current) == current)
+            {
+                current.Dispose();
+                IsExploring = false;
+            }
+        }
+    }
+
+    [RelayCommand]
+    private void ApplyVariation(VariationCandidateItem? item)
+    {
+        if (item is null)
+        {
+            return;
+        }
+
+        CancelVariationWork();
+        Mutate(_artwork.ApplyVariationRecipe(item.Definition.Recipe));
+        StatusMessage = $"已采用{item.Title}；可撤销，也可从该结果继续探索。";
+    }
+
+    [RelayCommand]
+    private async Task ContinueFromVariationAsync(VariationCandidateItem? item)
+    {
+        if (item is null)
+        {
+            return;
+        }
+
+        ApplyVariation(item);
+        await GenerateVariationsAsync().ConfigureAwait(true);
+    }
+
+    [RelayCommand]
+    private void ToggleFavorite(VariationCandidateItem? item)
+    {
+        if (item is null)
+        {
+            return;
+        }
+
+        var favorites = _artwork.Exploration.Favorites.ToList();
+        var existing = favorites.FindIndex(favorite => favorite.Id == $"fav-{item.Definition.Id}");
+        if (existing >= 0)
+        {
+            favorites.RemoveAt(existing);
+            item.IsFavorite = false;
+        }
+        else
+        {
+            if (favorites.Count >= 64)
+            {
+                StatusMessage = "收藏已达到 64 项上限，请先移除旧收藏。";
+                return;
+            }
+
+            favorites.Add(new FavoriteVariationDefinition(
+                $"fav-{item.Definition.Id}",
+                $"第 {_artwork.Exploration.Generation} 轮 · {item.Title}",
+                item.Definition.Recipe));
+            item.IsFavorite = true;
+        }
+
+        TryMutateExploration(_artwork.Exploration with { Favorites = favorites });
+    }
+
+    [RelayCommand]
+    private void RestoreFavorite(FavoriteVariationDefinition? favorite)
+    {
+        if (favorite is null)
+        {
+            return;
+        }
+
+        CancelVariationWork();
+        Mutate(_artwork.ApplyVariationRecipe(favorite.Recipe));
+        StatusMessage = $"已恢复收藏“{favorite.Name}”。";
+    }
+
+    [RelayCommand]
+    private async Task ContinueFromFavoriteAsync(FavoriteVariationDefinition? favorite)
+    {
+        if (favorite is null)
+        {
+            return;
+        }
+
+        RestoreFavorite(favorite);
+        await GenerateVariationsAsync().ConfigureAwait(true);
+    }
+
+    [RelayCommand]
+    private void ApplyArtworkPreset(string? id)
+    {
+        if (!string.IsNullOrWhiteSpace(id))
+        {
+            Mutate(_presetCatalog.ApplyArtworkPreset(_artwork, id));
+        }
+    }
+
+    [RelayCommand]
+    private void ApplyPalettePreset(string? id)
+    {
+        if (!string.IsNullOrWhiteSpace(id))
+        {
+            Mutate(_presetCatalog.ApplyPalettePreset(_artwork, id));
+        }
+    }
+
+    [RelayCommand]
+    private void SetVariationMode(string? mode)
+    {
+        if (Enum.TryParse<VariationMode>(mode, out var parsed))
+        {
+            TryMutateExploration(_artwork.Exploration with { Mode = parsed });
+        }
     }
 
     [RelayCommand]
@@ -300,6 +547,7 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
     {
         _previewCancellation?.Cancel();
         _exportCancellation?.Cancel();
+        _variationCancellation?.Cancel();
     }
 
     internal Task RenderPreviewNowAsync(CancellationToken cancellationToken = default) =>
@@ -365,7 +613,60 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         TryMutate(candidate);
     }
 
-    private void Mutate(ArtworkDefinition candidate, bool recordHistory = true)
+    private bool IsLocked(VariationLockGroups group) => _artwork.Exploration.Locks.HasFlag(group);
+
+    private void SetLock(VariationLockGroups group, bool isLocked)
+    {
+        var locks = isLocked
+            ? _artwork.Exploration.Locks | group
+            : _artwork.Exploration.Locks & ~group;
+        TryMutateExploration(_artwork.Exploration with { Locks = locks });
+    }
+
+    private void TryMutateExploration(ArtworkExplorationDefinition exploration)
+    {
+        TryMutate(_artwork with { Exploration = exploration }, renderPreview: false);
+    }
+
+    private void CancelVariationWork()
+    {
+        Interlocked.Increment(ref _variationGeneration);
+        CancelAndDispose(ref _variationCancellation);
+        IsExploring = false;
+    }
+
+    private async Task RestoreVariationPreviewsAsync(CancellationToken cancellationToken)
+    {
+        var rendered = await _variationExplorer.RenderAsync(
+            _artwork,
+            _artwork.Exploration.Candidates,
+            cancellationToken).ConfigureAwait(true);
+        cancellationToken.ThrowIfCancellationRequested();
+        ReplaceVariationItems(rendered);
+    }
+
+    private void ReplaceVariationItems(IReadOnlyList<RenderedVariation> rendered)
+    {
+        foreach (var oldItem in VariationCandidates)
+        {
+            oldItem.Dispose();
+        }
+
+        VariationCandidates.Clear();
+        var favoriteIds = _artwork.Exploration.Favorites
+            .Select(favorite => favorite.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (var renderedVariation in rendered.OrderBy(item => item.Candidate.Number))
+        {
+            var bitmap = _previewImageFactory.Create(renderedVariation.Image, CancellationToken.None);
+            VariationCandidates.Add(new VariationCandidateItem(
+                renderedVariation.Candidate,
+                bitmap,
+                favoriteIds.Contains($"fav-{renderedVariation.Candidate.Id}")));
+        }
+    }
+
+    private void Mutate(ArtworkDefinition candidate, bool recordHistory = true, bool renderPreview = true)
     {
         ThrowIfDisposed();
         if (ReferenceEquals(candidate, _artwork) || candidate == _artwork)
@@ -383,14 +684,17 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         _revision++;
         NotifyArtworkProperties();
         NotifyHistoryAndDirty(wasDirty);
-        _ = RenderPreviewCoreAsync(debounce: true, CancellationToken.None);
+        if (renderPreview)
+        {
+            _ = RenderPreviewCoreAsync(debounce: true, CancellationToken.None);
+        }
     }
 
-    private void TryMutate(ArtworkDefinition candidate, bool recordHistory = true)
+    private void TryMutate(ArtworkDefinition candidate, bool recordHistory = true, bool renderPreview = true)
     {
         try
         {
-            Mutate(candidate, recordHistory);
+            Mutate(candidate, recordHistory, renderPreview);
         }
         catch (InvalidDataException exception)
         {
@@ -435,12 +739,85 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
 
     private void ApplyHistory(ArtworkDefinition candidate)
     {
+        CancelVariationWork();
         var wasDirty = IsDirty;
         _artwork = candidate;
         _revision++;
         NotifyArtworkProperties();
         NotifyHistoryAndDirty(wasDirty);
+        RefreshVariationPresentationAfterHistory();
         _ = RenderPreviewCoreAsync(debounce: false, CancellationToken.None);
+    }
+
+    private void RefreshVariationPresentationAfterHistory()
+    {
+        if (VariationCandidates.Select(item => item.Definition)
+            .SequenceEqual(_artwork.Exploration.Candidates))
+        {
+            SynchronizeVariationFavoriteStates();
+            return;
+        }
+
+        foreach (var item in VariationCandidates)
+        {
+            item.Dispose();
+        }
+
+        VariationCandidates.Clear();
+        if (_artwork.Exploration.Candidates.Count == 0)
+        {
+            return;
+        }
+
+        _variationCancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.ClosingToken);
+        var current = _variationCancellation;
+        var generation = Interlocked.Increment(ref _variationGeneration);
+        IsExploring = true;
+        _ = RestoreVariationPreviewsAfterHistoryAsync(current, generation);
+    }
+
+    /// <summary>撤销/重做可能切换候选批次；缩略图可重算，因此异步恢复失败只影响呈现，不回滚已经正确恢复的作品。</summary>
+    private async Task RestoreVariationPreviewsAfterHistoryAsync(CancellationTokenSource current, long generation)
+    {
+        try
+        {
+            var rendered = await _variationExplorer.RenderAsync(
+                _artwork,
+                _artwork.Exploration.Candidates,
+                current.Token).ConfigureAwait(true);
+            if (generation == Volatile.Read(ref _variationGeneration) && !_disposed && !_lifetime.IsClosing)
+            {
+                ReplaceVariationItems(rendered);
+            }
+        }
+        catch (OperationCanceledException) when (current.IsCancellationRequested)
+        {
+            // 新命令或关闭会取消恢复；作品配方已正确切换，不需要把取消当成错误。
+        }
+        catch (Exception exception)
+        {
+            if (generation == Volatile.Read(ref _variationGeneration))
+            {
+                StatusMessage = $"候选配方已恢复，但缩略图重建失败：{exception.Message}";
+            }
+        }
+        finally
+        {
+            if (Interlocked.CompareExchange(ref _variationCancellation, null, current) == current)
+            {
+                current.Dispose();
+                IsExploring = false;
+            }
+        }
+    }
+
+    private void SynchronizeVariationFavoriteStates()
+    {
+        var favoriteIds = _artwork.Exploration.Favorites.Select(item => item.Id).ToHashSet(StringComparer.Ordinal);
+        foreach (var item in VariationCandidates)
+        {
+            item.IsFavorite = favoriteIds.Contains($"fav-{item.Definition.Id}");
+        }
     }
 
     private async Task RenderPreviewCoreAsync(bool debounce, CancellationToken externalCancellation)
@@ -561,11 +938,21 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         OnPropertyChanged(nameof(ConstantReal));
         OnPropertyChanged(nameof(ConstantImaginary));
         OnPropertyChanged(nameof(MaxIterations));
+        OnPropertyChanged(nameof(Detail));
+        OnPropertyChanged(nameof(Flow));
+        OnPropertyChanged(nameof(Curl));
         OnPropertyChanged(nameof(ForceHighPrecision));
         OnPropertyChanged(nameof(PrecisionDigits));
         OnPropertyChanged(nameof(GradientStartHex));
         OnPropertyChanged(nameof(GradientEndHex));
         OnPropertyChanged(nameof(HighQualityPreview));
+        OnPropertyChanged(nameof(MutationStrength));
+        OnPropertyChanged(nameof(IsSeedLocked));
+        OnPropertyChanged(nameof(IsCompositionLocked));
+        OnPropertyChanged(nameof(IsShapeLocked));
+        OnPropertyChanged(nameof(IsColorLocked));
+        OnPropertyChanged(nameof(VariationModeName));
+        OnPropertyChanged(nameof(Favorites));
     }
 
     private void NotifyHistoryAndDirty(bool wasDirty)
@@ -580,6 +967,7 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
 
     partial void OnIsRenderingChanged(bool value) => OnPropertyChanged(nameof(IsOperationBusy));
     partial void OnIsExportingChanged(bool value) => OnPropertyChanged(nameof(IsOperationBusy));
+    partial void OnIsExploringChanged(bool value) => OnPropertyChanged(nameof(IsOperationBusy));
     partial void OnPreviewImageChanged(Bitmap? value) => OnPropertyChanged(nameof(IsPreviewEmpty));
 
     public void Dispose()
@@ -593,6 +981,12 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         Interlocked.Increment(ref _previewGeneration);
         CancelAndDispose(ref _previewCancellation);
         CancelAndDispose(ref _exportCancellation);
+        CancelAndDispose(ref _variationCancellation);
+        foreach (var item in VariationCandidates)
+        {
+            item.Dispose();
+        }
+        VariationCandidates.Clear();
         PreviewImage?.Dispose();
         PreviewImage = null;
     }

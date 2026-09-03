@@ -45,7 +45,8 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
                 artwork.Gradient.Interior.ToHex()),
             new PresentationDto(
                 artwork.Presentation.SelectedSection,
-                artwork.Presentation.HighQualityPreview));
+                artwork.Presentation.HighQualityPreview),
+            EncodeExploration(artwork.Exploration));
         return new DocumentContent(ContentSchemaVersion, JsonSerializer.SerializeToElement(dto, JsonOptions));
     }
 
@@ -67,12 +68,13 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
         return formatVersion switch
         {
             1 => DecodeVersion1(content.Payload),
-            ArtworkDefinition.CurrentFormatVersion => DecodeVersion2(content.Payload),
+            2 => DecodeVersion2(content.Payload),
+            ArtworkDefinition.CurrentFormatVersion => DecodeVersion3(content.Payload),
             _ => throw new NotSupportedException($"不支持作品格式版本 {formatVersion}。")
         };
     }
 
-    private ArtworkDefinition DecodeVersion2(JsonElement payload)
+    private ArtworkDefinition DecodeVersion3(JsonElement payload)
     {
         SnapshotDto? dto;
         try
@@ -85,9 +87,9 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
         }
 
         if (dto?.FormatVersion is null || dto.Seed is null || dto.Canvas is null || dto.Julia is null ||
-            dto.Gradient is null || dto.Presentation is null)
+            dto.Gradient is null || dto.Presentation is null || dto.Exploration is null)
         {
-            throw new InvalidDataException("作品缺少 formatVersion、seed、canvas、julia、gradient 或 presentation。");
+            throw new InvalidDataException("作品缺少 formatVersion、seed、canvas、julia、gradient、presentation 或 exploration。");
         }
 
         var canvas = dto.Canvas;
@@ -124,14 +126,68 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
             new GradientDefinition(start, end, interior),
             new ArtworkPresentationDefinition(
                 presentation.SelectedSection,
-                presentation.HighQualityPreview.Value));
+                presentation.HighQualityPreview.Value),
+            DecodeExploration(dto.Exploration));
         validator.Validate(artwork);
         return artwork;
     }
 
     /// <summary>
+    /// G0003 的 v2 快照没有探索字段。迁移时只补入明确的空探索状态，既不虚构收藏，也不改变原有渲染配方。
+    /// </summary>
+    private ArtworkDefinition DecodeVersion2(JsonElement payload)
+    {
+        var legacy = DecodeVersion2Fields(payload);
+        var migrated = legacy with
+        {
+            FormatVersion = ArtworkDefinition.CurrentFormatVersion,
+            Exploration = ArtworkExplorationDefinition.CreateDefault()
+        };
+        validator.Validate(migrated);
+        return migrated;
+    }
+
+    private ArtworkDefinition DecodeVersion2Fields(JsonElement payload)
+    {
+        SnapshotDto? dto;
+        try
+        {
+            dto = payload.Deserialize<SnapshotDto>(JsonOptions);
+        }
+        catch (JsonException exception)
+        {
+            throw new InvalidDataException("v2 作品 JSON 结构损坏。", exception);
+        }
+
+        if (dto?.FormatVersion != 2 || dto.Seed is null || dto.Canvas?.Width is null || dto.Canvas.Height is null ||
+            dto.Julia is null || string.IsNullOrWhiteSpace(dto.Julia.CenterX) || string.IsNullOrWhiteSpace(dto.Julia.CenterY) ||
+            string.IsNullOrWhiteSpace(dto.Julia.Scale) || string.IsNullOrWhiteSpace(dto.Julia.ConstantReal) ||
+            string.IsNullOrWhiteSpace(dto.Julia.ConstantImaginary) || dto.Julia.MaxIterations is null ||
+            dto.Julia.ForceHighPrecision is null || dto.Julia.PrecisionDigits is null || dto.Gradient is null ||
+            dto.Presentation?.HighQualityPreview is null || string.IsNullOrWhiteSpace(dto.Presentation.SelectedSection) ||
+            !RgbaColor.TryParse(dto.Canvas.Background, out var background) ||
+            !RgbaColor.TryParse(dto.Gradient.Start, out var start) ||
+            !RgbaColor.TryParse(dto.Gradient.End, out var end) ||
+            !RgbaColor.TryParse(dto.Gradient.Interior, out var interior))
+        {
+            throw new InvalidDataException("v2 作品包含缺失或非法字段，无法安全迁移。");
+        }
+
+        return new ArtworkDefinition(
+            2,
+            dto.Seed.Value,
+            new CanvasDefinition(dto.Canvas.Width.Value, dto.Canvas.Height.Value, background),
+            new JuliaDefinition(dto.Julia.CenterX, dto.Julia.CenterY, dto.Julia.Scale,
+                dto.Julia.ConstantReal, dto.Julia.ConstantImaginary, dto.Julia.MaxIterations.Value,
+                dto.Julia.ForceHighPrecision.Value, dto.Julia.PrecisionDigits.Value),
+            new GradientDefinition(start, end, interior),
+            new ArtworkPresentationDefinition(dto.Presentation.SelectedSection, dto.Presentation.HighQualityPreview.Value),
+            ArtworkExplorationDefinition.CreateDefault());
+    }
+
+    /// <summary>
     /// 把 G0003 初版的 IEEE 754 数值显式迁移为 round-trip 十进制文本。
-    /// 迁移不会声称恢复 double 已经丢失的位数，但此后所有新平移和缩放都由 v2 高精度模型保存。
+    /// 迁移不会声称恢复 double 已经丢失的位数，但此后所有新平移和缩放都由当前高精度模型保存。
     /// </summary>
     private ArtworkDefinition DecodeVersion1(JsonElement payload)
     {
@@ -174,7 +230,8 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
             new GradientDefinition(start, end, interior),
             new ArtworkPresentationDefinition(
                 dto.Presentation.SelectedSection,
-                dto.Presentation.HighQualityPreview.Value));
+                dto.Presentation.HighQualityPreview.Value),
+            ArtworkExplorationDefinition.CreateDefault());
         validator.Validate(migrated);
         return migrated;
     }
@@ -187,7 +244,8 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
         CanvasDto? Canvas,
         JuliaDto? Julia,
         GradientDto? Gradient,
-        PresentationDto? Presentation);
+        PresentationDto? Presentation,
+        ExplorationDto? Exploration);
 
     private sealed record CanvasDto(int? Width, int? Height, string? Background);
     private sealed record JuliaDto(
@@ -201,6 +259,16 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
         int? PrecisionDigits);
     private sealed record GradientDto(string? Start, string? End, string? Interior);
     private sealed record PresentationDto(string? SelectedSection, bool? HighQualityPreview);
+    private sealed record ExplorationDto(
+        double? MutationStrength,
+        int? Locks,
+        int? Mode,
+        int? Generation,
+        VariationCandidateDto?[]? Candidates,
+        FavoriteVariationDto?[]? Favorites);
+    private sealed record VariationCandidateDto(string? Id, int? Number, VariationRecipeDto? Recipe);
+    private sealed record FavoriteVariationDto(string? Id, string? Name, VariationRecipeDto? Recipe);
+    private sealed record VariationRecipeDto(long? Seed, JuliaDto? Julia, GradientDto? Gradient);
 
     private sealed record LegacySnapshotDto(
         int? FormatVersion,
@@ -217,4 +285,83 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
         double? ConstantReal,
         double? ConstantImaginary,
         int? MaxIterations);
+
+    private static ExplorationDto EncodeExploration(ArtworkExplorationDefinition exploration) => new(
+        exploration.MutationStrength,
+        (int)exploration.Locks,
+        (int)exploration.Mode,
+        exploration.Generation,
+        exploration.Candidates.Select(candidate => new VariationCandidateDto(
+            candidate.Id,
+            candidate.Number,
+            EncodeRecipe(candidate.Recipe))).ToArray(),
+        exploration.Favorites.Select(favorite => new FavoriteVariationDto(
+            favorite.Id,
+            favorite.Name,
+            EncodeRecipe(favorite.Recipe))).ToArray());
+
+    private static VariationRecipeDto EncodeRecipe(VariationRecipeDefinition recipe) => new(
+        recipe.Seed,
+        new JuliaDto(recipe.Julia.CenterX, recipe.Julia.CenterY, recipe.Julia.Scale,
+            recipe.Julia.ConstantReal, recipe.Julia.ConstantImaginary, recipe.Julia.MaxIterations,
+            recipe.Julia.ForceHighPrecision, recipe.Julia.PrecisionDigits),
+        new GradientDto(recipe.Gradient.Start.ToHex(), recipe.Gradient.End.ToHex(), recipe.Gradient.Interior.ToHex()));
+
+    private static ArtworkExplorationDefinition DecodeExploration(ExplorationDto dto)
+    {
+        if (dto.MutationStrength is null || dto.Locks is null || dto.Mode is null || dto.Generation is null ||
+            dto.Candidates is null || dto.Favorites is null)
+        {
+            throw new InvalidDataException("探索状态包含缺失字段。");
+        }
+
+        var candidates = dto.Candidates.Select(candidate =>
+        {
+            if (candidate is null || string.IsNullOrWhiteSpace(candidate.Id) || candidate.Number is null || candidate.Recipe is null)
+            {
+                throw new InvalidDataException("变体候选包含缺失字段。");
+            }
+
+            return new VariationCandidateDefinition(candidate.Id, candidate.Number.Value, DecodeRecipe(candidate.Recipe));
+        }).ToArray();
+        var favorites = dto.Favorites.Select(favorite =>
+        {
+            if (favorite is null || string.IsNullOrWhiteSpace(favorite.Id) || string.IsNullOrWhiteSpace(favorite.Name) || favorite.Recipe is null)
+            {
+                throw new InvalidDataException("收藏变体包含缺失字段。");
+            }
+
+            return new FavoriteVariationDefinition(favorite.Id, favorite.Name, DecodeRecipe(favorite.Recipe));
+        }).ToArray();
+
+        return new ArtworkExplorationDefinition(
+            dto.MutationStrength.Value,
+            (VariationLockGroups)dto.Locks.Value,
+            (VariationMode)dto.Mode.Value,
+            dto.Generation.Value,
+            candidates,
+            favorites);
+    }
+
+    private static VariationRecipeDefinition DecodeRecipe(VariationRecipeDto dto)
+    {
+        if (dto.Seed is null || dto.Julia is null || dto.Gradient is null ||
+            string.IsNullOrWhiteSpace(dto.Julia.CenterX) || string.IsNullOrWhiteSpace(dto.Julia.CenterY) ||
+            string.IsNullOrWhiteSpace(dto.Julia.Scale) || string.IsNullOrWhiteSpace(dto.Julia.ConstantReal) ||
+            string.IsNullOrWhiteSpace(dto.Julia.ConstantImaginary) || dto.Julia.MaxIterations is null ||
+            dto.Julia.ForceHighPrecision is null || dto.Julia.PrecisionDigits is null ||
+            !RgbaColor.TryParse(dto.Gradient.Start, out var start) ||
+            !RgbaColor.TryParse(dto.Gradient.End, out var end) ||
+            !RgbaColor.TryParse(dto.Gradient.Interior, out var interior))
+        {
+            throw new InvalidDataException("候选渲染配方包含缺失或非法字段。");
+        }
+
+        return new VariationRecipeDefinition(
+            dto.Seed.Value,
+            new JuliaDefinition(dto.Julia.CenterX, dto.Julia.CenterY, dto.Julia.Scale,
+                dto.Julia.ConstantReal, dto.Julia.ConstantImaginary, dto.Julia.MaxIterations.Value,
+                dto.Julia.ForceHighPrecision.Value, dto.Julia.PrecisionDigits.Value),
+            new GradientDefinition(start, end, interior));
+    }
 }
