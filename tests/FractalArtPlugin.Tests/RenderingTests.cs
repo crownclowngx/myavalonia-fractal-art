@@ -12,7 +12,8 @@ public sealed class RenderingTests
     {
         var generator = new JuliaFieldGenerator();
         var definition = ArtworkDefinition.CreateDefault().Julia with { MaxIterations = 96 };
-        var context = new RenderContext(80, 60, RenderQuality.Final, 42, RenderContext.CurrentRendererVersion);
+        var context = new RenderContext(
+            80, 60, RenderQuality.Final, 42, RenderContext.CurrentRendererVersion, NumericPrecision.Double, 96);
 
         var first = await generator.GenerateAsync(definition, context, CancellationToken.None);
         var second = await generator.GenerateAsync(definition, context, CancellationToken.None);
@@ -30,7 +31,8 @@ public sealed class RenderingTests
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
         var generator = new JuliaFieldGenerator();
-        var context = new RenderContext(64, 64, RenderQuality.Draft, 1, RenderContext.CurrentRendererVersion);
+        var context = new RenderContext(
+            64, 64, RenderQuality.Draft, 1, RenderContext.CurrentRendererVersion, NumericPrecision.Double, 96);
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             generator.GenerateAsync(ArtworkDefinition.CreateDefault().Julia, context, cancellation.Token));

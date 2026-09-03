@@ -29,6 +29,7 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
     private long _previewGeneration;
     private long _revision;
     private long _acceptedRevision;
+    private ArtworkDefinition? _viewportInteractionStart;
     private bool _disposed;
 
     public FractalArtworkDocument(
@@ -90,40 +91,67 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         set => Mutate(value == Seed ? _artwork : _artwork with { Seed = value });
     }
 
-    public double CenterX
+    public string CenterX
     {
         get => _artwork.Julia.CenterX;
-        set => Mutate(value == CenterX ? _artwork : _artwork with { Julia = _artwork.Julia with { CenterX = value } });
+        set => SetHighPrecisionNumber(value, CenterX, number =>
+            _artwork with { Julia = _artwork.Julia with { CenterX = number } });
     }
 
-    public double CenterY
+    public string CenterY
     {
         get => _artwork.Julia.CenterY;
-        set => Mutate(value == CenterY ? _artwork : _artwork with { Julia = _artwork.Julia with { CenterY = value } });
+        set => SetHighPrecisionNumber(value, CenterY, number =>
+            _artwork with { Julia = _artwork.Julia with { CenterY = number } });
     }
 
-    public double Scale
+    public string Scale
     {
         get => _artwork.Julia.Scale;
-        set => Mutate(value == Scale ? _artwork : _artwork with { Julia = _artwork.Julia with { Scale = value } });
+        set => SetHighPrecisionNumber(value, Scale, number =>
+            _artwork with { Julia = _artwork.Julia with { Scale = number } });
     }
 
-    public double ConstantReal
+    public string ConstantReal
     {
         get => _artwork.Julia.ConstantReal;
-        set => Mutate(value == ConstantReal ? _artwork : _artwork with { Julia = _artwork.Julia with { ConstantReal = value } });
+        set => SetHighPrecisionNumber(value, ConstantReal, number =>
+            _artwork with { Julia = _artwork.Julia with { ConstantReal = number } });
     }
 
-    public double ConstantImaginary
+    public string ConstantImaginary
     {
         get => _artwork.Julia.ConstantImaginary;
-        set => Mutate(value == ConstantImaginary ? _artwork : _artwork with { Julia = _artwork.Julia with { ConstantImaginary = value } });
+        set => SetHighPrecisionNumber(value, ConstantImaginary, number =>
+            _artwork with { Julia = _artwork.Julia with { ConstantImaginary = number } });
     }
 
     public int MaxIterations
     {
         get => _artwork.Julia.MaxIterations;
         set => Mutate(value == MaxIterations ? _artwork : _artwork with { Julia = _artwork.Julia with { MaxIterations = value } });
+    }
+
+    public bool ForceHighPrecision
+    {
+        get => _artwork.Julia.ForceHighPrecision;
+        set => Mutate(value == ForceHighPrecision
+            ? _artwork
+            : _artwork with { Julia = _artwork.Julia with { ForceHighPrecision = value } });
+    }
+
+    public int PrecisionDigits
+    {
+        get => _artwork.Julia.PrecisionDigits;
+        set
+        {
+            if (value == PrecisionDigits)
+            {
+                return;
+            }
+
+            TryMutate(_artwork with { Julia = _artwork.Julia with { PrecisionDigits = value } });
+        }
     }
 
     public string GradientStartHex
@@ -277,7 +305,58 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
     internal Task RenderPreviewNowAsync(CancellationToken cancellationToken = default) =>
         RenderPreviewCoreAsync(debounce: false, cancellationToken);
 
-    private void Mutate(ArtworkDefinition candidate)
+    /// <summary>开始一次连续拖动画布；拖动期间可以多次刷新，但撤销历史只记录手势开始前的一份作品。</summary>
+    internal void BeginViewportInteraction()
+    {
+        ThrowIfDisposed();
+        _viewportInteractionStart ??= _artwork;
+    }
+
+    internal void PanViewport(double deltaX, double deltaY, double viewportHeight)
+    {
+        var candidate = _artwork with
+        {
+            Julia = HighPrecisionViewport.Pan(_artwork.Julia, deltaX, deltaY, viewportHeight)
+        };
+        TryMutate(candidate, recordHistory: _viewportInteractionStart is null);
+    }
+
+    internal void EndViewportInteraction()
+    {
+        var start = _viewportInteractionStart;
+        _viewportInteractionStart = null;
+        if (start is null || start == _artwork)
+        {
+            return;
+        }
+
+        _history.Record(start);
+        OnPropertyChanged(nameof(CanUndo));
+        OnPropertyChanged(nameof(CanRedo));
+    }
+
+    /// <summary>围绕鼠标指向的复平面位置缩放；中心和尺度全程使用作品声明的十进制精度。</summary>
+    internal void ZoomViewport(
+        double pointerX,
+        double pointerY,
+        double viewportWidth,
+        double viewportHeight,
+        double wheelDelta)
+    {
+        var candidate = _artwork with
+        {
+            Julia = HighPrecisionViewport.ZoomAt(
+                _artwork.Julia,
+                pointerX,
+                pointerY,
+                viewportWidth,
+                viewportHeight,
+                wheelDelta)
+        };
+        TryMutate(candidate);
+    }
+
+    private void Mutate(ArtworkDefinition candidate, bool recordHistory = true)
     {
         ThrowIfDisposed();
         if (ReferenceEquals(candidate, _artwork) || candidate == _artwork)
@@ -287,12 +366,45 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
 
         _validator.Validate(candidate);
         var wasDirty = IsDirty;
-        _history.Record(_artwork);
+        if (recordHistory)
+        {
+            _history.Record(_artwork);
+        }
         _artwork = candidate;
         _revision++;
         NotifyArtworkProperties();
         NotifyHistoryAndDirty(wasDirty);
         _ = RenderPreviewCoreAsync(debounce: true, CancellationToken.None);
+    }
+
+    private void TryMutate(ArtworkDefinition candidate, bool recordHistory = true)
+    {
+        try
+        {
+            Mutate(candidate, recordHistory);
+        }
+        catch (InvalidDataException exception)
+        {
+            StatusMessage = exception.Message;
+        }
+    }
+
+    private void SetHighPrecisionNumber(
+        string? text,
+        string current,
+        Func<string, ArtworkDefinition> createCandidate)
+    {
+        if (!ArbitraryDecimal.TryParse(text, out var value))
+        {
+            StatusMessage = "请输入普通十进制或科学计数法，例如 -0.745、1e-40。";
+            return;
+        }
+
+        var normalized = value.Round(PrecisionDigits).ToString();
+        if (!string.Equals(normalized, current, StringComparison.Ordinal))
+        {
+            TryMutate(createCandidate(normalized));
+        }
     }
 
     private void SetColor(
@@ -335,7 +447,10 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         var snapshot = _artwork;
         var context = RenderContext.ForPreview(snapshot);
         IsRendering = true;
-        StatusMessage = $"正在渲染 {context.Width}×{context.Height} 交互预览…";
+        var precisionLabel = context.NumericPrecision == NumericPrecision.Arbitrary
+            ? $"任意精度 {context.PrecisionDigits} 位"
+            : "double 快速模式";
+        StatusMessage = $"正在渲染 {context.Width}×{context.Height} 交互预览 · {precisionLabel}…";
 
         try
         {
@@ -362,7 +477,7 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
             PreviewImage = bitmap;
             old?.Dispose();
             LastPreviewFingerprint = RenderFingerprint.Create(result);
-            StatusMessage = $"预览完成 · renderer v{context.RendererVersion} · {LastPreviewFingerprint}";
+            StatusMessage = $"预览完成 · {precisionLabel} · renderer v{context.RendererVersion} · {LastPreviewFingerprint}";
         }
         catch (OperationCanceledException) when (current.IsCancellationRequested)
         {
@@ -401,6 +516,8 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         OnPropertyChanged(nameof(ConstantReal));
         OnPropertyChanged(nameof(ConstantImaginary));
         OnPropertyChanged(nameof(MaxIterations));
+        OnPropertyChanged(nameof(ForceHighPrecision));
+        OnPropertyChanged(nameof(PrecisionDigits));
         OnPropertyChanged(nameof(GradientStartHex));
         OnPropertyChanged(nameof(GradientEndHex));
         OnPropertyChanged(nameof(HighQualityPreview));

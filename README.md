@@ -2,6 +2,8 @@
 
 这是 `myavalonia.plugin.fractal.art` 的 Managed Plugin 解决方案。当前已完成 G0001–G0003：
 产品化插件壳、可持久化空作品闭环，以及 Julia → 标量场 → 线性渐变 → 预览/PNG 导出的首条纵向切片。
+画布支持鼠标拖动平移和以指针为锚点的滚轮缩放；Julia 配方使用高精度十进制文本持久化，并在深缩放时
+自动切换到 32–1024 位可配置的任意精度定点内核。
 真实交付物是 `src/FractalArtPlugin.Plugin`；`Standalone` 只负责快速预览同一份 View、Document 与业务服务。
 
 > 第一次开始开发前，请先阅读 [项目文档与快速开始](docs/README.md)。其中说明了三个子项目和

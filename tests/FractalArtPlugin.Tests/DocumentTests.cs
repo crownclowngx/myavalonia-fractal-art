@@ -41,8 +41,8 @@ public sealed class DocumentTests
         var first = firstFixture.CreateDocument();
         var second = secondFixture.CreateDocument();
         await first.InitializeAsync(new NewDocumentActivation("作品 A"), CancellationToken.None);
-        first.ConstantReal = -0.91;
-        first.ConstantImaginary = 0.22;
+        first.ConstantReal = "-0.91";
+        first.ConstantImaginary = "0.22";
         first.Seed = 2027;
         var snapshot = await first.CaptureSaveSnapshotAsync(CancellationToken.None);
 
@@ -52,7 +52,7 @@ public sealed class DocumentTests
 
         Assert.Equal(first.Artwork, second.Artwork);
         Assert.False(second.IsDirty);
-        second.Scale = 2.25;
+        second.Scale = "2.25";
         Assert.NotEqual(first.Scale, second.Scale);
         Assert.Equal("作品 A 恢复", second.Presentation.Title);
     }
@@ -64,14 +64,14 @@ public sealed class DocumentTests
         var document = fixture.CreateDocument();
         await document.InitializeAsync(new NewDocumentActivation("历史"), CancellationToken.None);
         var original = document.Scale;
-        document.Scale = 2.4;
+        document.Scale = "2.4";
 
         document.UndoCommand.Execute(null);
         Assert.Equal(original, document.Scale);
         Assert.True(document.CanRedo);
 
         document.RedoCommand.Execute(null);
-        Assert.Equal(2.4, document.Scale);
+        Assert.Equal(2.4, ArbitraryDecimal.Parse(document.Scale).ToDouble(), 12);
         Assert.True(document.CanUndo);
     }
 
@@ -97,14 +97,14 @@ public sealed class DocumentTests
         var document = fixture.CreateDocument();
         await document.InitializeAsync(new NewDocumentActivation("并发"), CancellationToken.None);
 
-        document.ConstantReal = -0.5;
+        document.ConstantReal = "-0.5";
         var oldTask = document.RenderPreviewNowAsync();
         await Task.Delay(10);
-        document.ConstantReal = -0.6;
+        document.ConstantReal = "-0.6";
         var latestTask = document.RenderPreviewNowAsync();
         await Task.WhenAll(oldTask, latestTask);
 
-        var expected = RenderFingerprint.Create(ControlledPipeline.CreateImage(-0.6));
+        var expected = RenderFingerprint.Create(ControlledPipeline.CreateImage("-0.6"));
         Assert.Equal(expected, document.LastPreviewFingerprint);
     }
 
@@ -120,6 +120,30 @@ public sealed class DocumentTests
             await document.InitializeAsync(new NewDocumentActivation("取消"), cancellation.Token));
 
         Assert.Equal(0, fixture.Pipeline.CallCount);
+    }
+
+    [Fact]
+    public async Task 连续拖动合并为一次撤销且滚轮改变高精度视口()
+    {
+        using var fixture = new DocumentFixture();
+        var document = fixture.CreateDocument();
+        await document.InitializeAsync(new NewDocumentActivation("交互"), CancellationToken.None);
+        var originalCenter = ArbitraryDecimal.Parse(document.CenterX);
+        var originalScale = ArbitraryDecimal.Parse(document.Scale);
+
+        document.BeginViewportInteraction();
+        document.PanViewport(10, 0, 600);
+        document.PanViewport(10, 0, 600);
+        document.EndViewportInteraction();
+
+        Assert.True(document.CanUndo);
+        Assert.NotEqual(originalCenter, ArbitraryDecimal.Parse(document.CenterX));
+        document.UndoCommand.Execute(null);
+        Assert.Equal(originalCenter, ArbitraryDecimal.Parse(document.CenterX));
+        Assert.False(document.CanUndo);
+
+        document.ZoomViewport(400, 300, 800, 600, 1);
+        Assert.True(ArbitraryDecimal.Parse(document.Scale).CompareTo(originalScale) < 0);
     }
 
     private sealed class DocumentFixture : IDisposable
@@ -173,14 +197,15 @@ public sealed class DocumentTests
             if (call > 1)
             {
                 // 特意忽略取消，模拟底层库迟到返回；Document 仍必须在提交前拦截。
-                await Task.Delay(artwork.Julia.ConstantReal == -0.5 ? 120 : 10);
+                await Task.Delay(ArbitraryDecimal.Parse(artwork.Julia.ConstantReal).ToDouble() == -0.5 ? 120 : 10);
             }
 
             return CreateImage(artwork.Julia.ConstantReal);
         }
 
-        public static RgbaImage CreateImage(double constantReal)
+        public static RgbaImage CreateImage(string constantRealText)
         {
+            var constantReal = ArbitraryDecimal.Parse(constantRealText).ToDouble();
             var value = (byte)Math.Clamp((int)Math.Round((constantReal + 2) * 50), 0, 255);
             return new RgbaImage(1, 1, [value, 0, 0, 255]);
         }

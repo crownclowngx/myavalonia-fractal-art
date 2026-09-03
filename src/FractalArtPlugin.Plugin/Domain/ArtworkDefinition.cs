@@ -36,14 +36,18 @@ public readonly record struct RgbaColor(byte Red, byte Green, byte Blue, byte Al
 /// <summary>作品画布的规范尺寸和背景；预览尺寸只是运行时投影，不回写这里。</summary>
 public sealed record CanvasDefinition(int Width, int Height, RgbaColor Background);
 
-/// <summary>Julia 生成器的单一事实来源；所有坐标均为数学平面中的双精度值。</summary>
+/// <summary>
+/// Julia 生成器的单一事实来源；数值以规范化十进制文本保存，避免作品在进入计算前被 double 截断。
+/// </summary>
 public sealed record JuliaDefinition(
-    double CenterX,
-    double CenterY,
-    double Scale,
-    double ConstantReal,
-    double ConstantImaginary,
-    int MaxIterations);
+    string CenterX,
+    string CenterY,
+    string Scale,
+    string ConstantReal,
+    string ConstantImaginary,
+    int MaxIterations,
+    bool ForceHighPrecision,
+    int PrecisionDigits);
 
 /// <summary>第一版线性渐变。内部点使用独立颜色，避免把“未逃逸”误当成渐变端点。</summary>
 public sealed record GradientDefinition(RgbaColor Start, RgbaColor End, RgbaColor Interior);
@@ -63,13 +67,13 @@ public sealed record ArtworkDefinition(
     GradientDefinition Gradient,
     ArtworkPresentationDefinition Presentation)
 {
-    public const int CurrentFormatVersion = 1;
+    public const int CurrentFormatVersion = 2;
 
     public static ArtworkDefinition CreateDefault() => new(
         CurrentFormatVersion,
         20260903,
         new CanvasDefinition(1200, 800, new RgbaColor(10, 14, 28)),
-        new JuliaDefinition(0, 0, 3.2, -0.745, 0.113, 320),
+        new JuliaDefinition("0", "0", "3.2", "-0.745", "0.113", 320, false, 96),
         new GradientDefinition(
             new RgbaColor(20, 31, 74),
             new RgbaColor(248, 167, 63),
@@ -100,13 +104,37 @@ internal sealed class ArtworkValidator : IArtworkValidator
         }
 
         var julia = artwork.Julia;
-        if (!double.IsFinite(julia.CenterX) || !double.IsFinite(julia.CenterY) ||
-            !double.IsFinite(julia.Scale) || julia.Scale is < 0.000001 or > 10 ||
-            !double.IsFinite(julia.ConstantReal) || julia.ConstantReal is < -2 or > 2 ||
-            !double.IsFinite(julia.ConstantImaginary) || julia.ConstantImaginary is < -2 or > 2 ||
+        if (julia.PrecisionDigits is < 32 or > 1024 ||
+            !ArbitraryDecimal.TryParse(julia.CenterX, out var centerX) ||
+            !ArbitraryDecimal.TryParse(julia.CenterY, out var centerY) ||
+            !ArbitraryDecimal.TryParse(julia.Scale, out var scale) ||
+            !ArbitraryDecimal.TryParse(julia.ConstantReal, out var constantReal) ||
+            !ArbitraryDecimal.TryParse(julia.ConstantImaginary, out var constantImaginary))
+        {
+            throw new InvalidDataException("Julia 高精度参数格式非法，或精度不在 32–1024 位范围内。");
+        }
+
+        var minimumStoredExponent = -(julia.PrecisionDigits + 16);
+        if (!IsRepresentable(centerX, julia.PrecisionDigits, minimumStoredExponent) ||
+            !IsRepresentable(centerY, julia.PrecisionDigits, minimumStoredExponent) ||
+            !IsRepresentable(scale, julia.PrecisionDigits, minimumStoredExponent) ||
+            !IsRepresentable(constantReal, julia.PrecisionDigits, minimumStoredExponent) ||
+            !IsRepresentable(constantImaginary, julia.PrecisionDigits, minimumStoredExponent) ||
+            centerX.CompareTo(ArbitraryDecimal.Parse("-1000000")) < 0 ||
+            centerX.CompareTo(ArbitraryDecimal.Parse("1000000")) > 0 ||
+            centerY.CompareTo(ArbitraryDecimal.Parse("-1000000")) < 0 ||
+            centerY.CompareTo(ArbitraryDecimal.Parse("1000000")) > 0 ||
+            scale.CompareTo(ArbitraryDecimal.Zero) <= 0 ||
+            scale.CompareTo(ArbitraryDecimal.Parse("10")) > 0 ||
+            scale.AdjustedExponent < -(julia.PrecisionDigits - 8) ||
+            constantReal.CompareTo(ArbitraryDecimal.Parse("-2")) < 0 ||
+            constantReal.CompareTo(ArbitraryDecimal.Parse("2")) > 0 ||
+            constantImaginary.CompareTo(ArbitraryDecimal.Parse("-2")) < 0 ||
+            constantImaginary.CompareTo(ArbitraryDecimal.Parse("2")) > 0 ||
             julia.MaxIterations is < 16 or > 4096)
         {
-            throw new InvalidDataException("Julia 参数超出安全预算或包含非有限数值。");
+            throw new InvalidDataException(
+                "Julia 参数格式非法或超出安全预算；精度允许 32–1024 位，尺度最小指数必须为 -(精度-8)。");
         }
 
         if (string.IsNullOrWhiteSpace(artwork.Presentation.SelectedSection) ||
@@ -115,4 +143,7 @@ internal sealed class ArtworkValidator : IArtworkValidator
             throw new InvalidDataException("呈现区域名称不能为空且不能超过 32 个字符。");
         }
     }
+
+    private static bool IsRepresentable(ArbitraryDecimal value, int precisionDigits, int minimumExponent) =>
+        value.IsZero || (value.SignificantDigits <= precisionDigits && value.Exponent >= minimumExponent);
 }

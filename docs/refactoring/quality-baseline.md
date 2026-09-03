@@ -34,8 +34,11 @@ dotnet format FractalArtPlugin.slnx --verify-no-changes --no-restore
 - 稳定 Plugin/Document ID、单一 Persistable Document、零 Tool/命令/菜单/快捷键；
 - 严格 Scope 构造与两个 Document 实例隔离；
 - 快照完整往返、缺字段、未知内容 schema、未知作品版本、资源预算；
+- v1 双精度快照显式迁移到 v2 高精度文本，恶意长度/指数和超过精度预算的输入被拒绝；
 - Dirty 转换、旧保存修订确认、撤销/重做、初始化取消；
 - Julia 确定性、归一化场、内部点、渐变端点、取消；
+- `double` 下溢以下的十进制运算、深尺度自动选路、任意精度确定性与 1024 位预览预算；
+- 拖动平移合并撤销、居中/偏心滚轮缩放以及复平面锚点不漂移；
 - 快速改参时迟到结果不提交；
 - 草稿预览与最终画布分离、PNG 签名/IHDR、导出取消与原子写入。
 
