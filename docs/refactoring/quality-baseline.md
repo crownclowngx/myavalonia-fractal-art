@@ -1,0 +1,50 @@
+# G0001–G0003 质量基线与门禁
+
+## 首要约束
+
+1. SOLID 是实现评审的第一顺位；领域规则不得依赖 Avalonia 或 Host 内部实现。
+2. 设计模式只在能缩小变化面时使用。本轮只采用不可变值对象、窄端口/适配器、应用管线和有界快照历史，
+   不引入通用节点框架、事件总线、仓储抽象或自制依赖注入容器。
+3. 公共边界、生命周期、取消、过期结果和持久化事务使用详细中文注释说明设计意图。
+4. 单元测试覆盖正常路径、边界、取消、并发迟到、损坏数据和身份注册，不以 UI 截图代替领域测试。
+
+## SOLID 落点
+
+| 原则 | 实际落点 |
+| --- | --- |
+| 单一职责 | Julia 生成、渐变、快照、PNG、原子写入、文件选择、历史和 Document 编排分别实现 |
+| 开闭原则 | 渲染、渐变、快照等窄端口允许替换实现，不修改 Document 生命周期 |
+| 里氏替换 | 测试替身与生产实现遵守同一取消和返回契约；Document 不识别具体类型 |
+| 接口隔离 | 文件窗口只暴露 PNG 输出选择，预览工厂只负责 `RgbaImage → Bitmap` |
+| 依赖倒置 | Document 依赖应用端口和 SDK 生命周期端口，不直接构造文件系统、编码器或对话框 |
+
+## 自动化门禁
+
+在仓库根目录执行：
+
+```powershell
+dotnet restore
+dotnet build FractalArtPlugin.slnx -c Debug -warnaserror
+dotnet test FractalArtPlugin.slnx -c Debug --no-build
+dotnet format FractalArtPlugin.slnx --verify-no-changes --no-restore
+```
+
+测试矩阵至少包含：
+
+- 稳定 Plugin/Document ID、单一 Persistable Document、零 Tool/命令/菜单/快捷键；
+- 严格 Scope 构造与两个 Document 实例隔离；
+- 快照完整往返、缺字段、未知内容 schema、未知作品版本、资源预算；
+- Dirty 转换、旧保存修订确认、撤销/重做、初始化取消；
+- Julia 确定性、归一化场、内部点、渐变端点、取消；
+- 快速改参时迟到结果不提交；
+- 草稿预览与最终画布分离、PNG 签名/IHDR、导出取消与原子写入。
+
+## 本轮不纳入门禁
+
+- 不创建 GitHub Actions、Azure DevOps 或其他 Windows CI；
+- 不生成或验收正式发布 ZIP；
+- 不做安装、升级、签名或发布门禁；
+- 不使用 AIFLOW，也不创建或修改 `.aiflow` 内容。
+
+真实 Host 的 Dock、文件信封、关闭确认和 ALC 行为仍需在集成环境人工验收；它与本地测试、Standalone
+烟雾验证互不替代。

@@ -1,10 +1,13 @@
 # Fractal Art 插件形态、产品定位与闭环实施计划
 
-> 文档状态：产品与实施基线草案  
+> 文档状态：产品与实施基线；G0001–G0003 已于 2026-09-03 完成代码与自动化门禁
 > 插件持久身份：`myavalonia.plugin.fractal.art`  
 > 产品显示名：Fractal Art / 分形画室  
 > 当前工程状态：由 Managed Plugin 模板实例化，尚未进入业务实现  
 > 本文范围：定义产品形态、能力边界、跨插件关系，以及以 `Gxxxx` 编号推进的实施顺序
+
+> 实施档案：每个阶段的当下计划、实施方案、结果与未完成的人工验收独立归档在
+> [`docs/refactoring`](refactoring/README.md)。本轮未增加 Windows CI，也未执行发布或正式 ZIP 门禁。
 
 ## 1. 文档目的
 
@@ -21,17 +24,19 @@
 
 ### 2.1 Fractal Art 当前形态
 
-当前项目已经具备模板提供的基础结构：
+截至 2026-09-03，项目已经完成 G0001–G0003：
 
 - `FractalArtPlugin.Plugin` 是唯一真实插件程序集和正式交付物；
-- `FractalArtPlugin.Standalone` 只承载同一套真实 View、Document 和业务服务，用于快速预览；
-- `FractalArtPlugin.Tests` 用于业务、状态、注册和生命周期测试；
-- 插件持久身份已经确定为 `myavalonia.plugin.fractal.art`；
-- 当前登记的是一个普通 `MainDocument`，显示内容仍是模板示例；
-- 当前存在一条模板 Workbench Command，只用于说明命令边界，不属于 Fractal Art 产品能力；
-- 当前没有 Tool、持久化作品、分形生成器、渲染管线和 ImageLab 接入。
+- `FractalArtPlugin.Standalone` 通过独立 Scope 承载同一套真实 View、Document 和业务服务；
+- `FractalArtPlugin.Tests` 覆盖业务、状态、持久化、注册、取消与迟到提交；
+- 插件持久身份为 `myavalonia.plugin.fractal.art`；
+- 首个 Document 类型已产品化为 `FractalArtworkDocument`，显示名为“分形作品”；
+- Document ID 保持 `myavalonia.plugin.fractal.art.document.main`，避免无收益的身份迁移；
+- Document 已登记为 Persistable Document，并保存版本、画布、背景、Seed、Julia、渐变和呈现状态；
+- 当前已具备 Julia 标量场、线性渐变、渐进预览与规范画布 PNG 导出；
+- 当前没有 Tool、Workbench Command、默认快捷键、ImageLab 接入或 Workflow Action。
 
-在第一次正式发布之前，可以替换模板显示名、类名和示例命令；插件持久身份不应改变。现有 Document ID `myavalonia.plugin.fractal.art.document.main` 可以继续作为首个作品 Document 的稳定身份，避免无必要的身份迁移。
+阶段实施事实、自动化证据和待人工验收见 [`docs/refactoring`](refactoring/README.md)。
 
 ### 2.2 ImageLab 当前形态
 

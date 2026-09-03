@@ -1,0 +1,22 @@
+# G0001–G0003 重构实施档案
+
+本目录独立保存 Fractal Art 产品化重构的专业文档，避免把阶段性决策、实施细节和验收证据散落在产品愿景中。
+产品长期路线仍以 [`product-shape-and-implementation-plan.md`](../product-shape-and-implementation-plan.md) 为基线。
+
+## 目录
+
+| 阶段 | 当下计划 | 实施方案 | 实施结果 |
+| --- | --- | --- | --- |
+| G0001 模板清理与产品身份冻结 | [计划](G0001/plan.md) | [方案](G0001/implementation.md) | [结果](G0001/result.md) |
+| G0002 作品领域模型与空持久化闭环 | [计划](G0002/plan.md) | [方案](G0002/implementation.md) | [结果](G0002/result.md) |
+| G0003 第一条 Julia 纵向渲染切片 | [计划](G0003/plan.md) | [方案](G0003/implementation.md) | [结果](G0003/result.md) |
+
+共同工程约束、SOLID 落点、测试矩阵和本轮明确排除的 CI/发布门禁见
+[质量基线与门禁](quality-baseline.md)。
+
+## 状态口径
+
+- “已实施”表示代码、文档及本地自动化门禁已经完成；
+- “已封板”还要求对应阶段声明的真实 Host 或人工视觉验收全部完成；
+- 本轮按要求不增加 AIFLOW、不增加 Windows CI、不执行发布与正式 ZIP 门禁；
+- 结果文档明确区分自动化已通过与留给集成环境的人工验收，不用降低措辞掩盖缺口。

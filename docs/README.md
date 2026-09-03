@@ -14,7 +14,8 @@ FractalArtPlugin/
 │  └─ FractalArtPlugin.Standalone/   # 只供本地开发的 Avalonia 窗口
 ├─ tests/
 │  └─ FractalArtPlugin.Tests/        # 插件业务、状态和注册行为测试
-└─ docs/                       # 当前项目随模板生成的开发说明
+└─ docs/
+   └─ refactoring/             # 按 G 编号归档的计划、实施方案、结果与质量门禁
 ```
 
 `FractalArtPlugin.Plugin` 是唯一正式插件项目。Standalone 和 Tests 都直接引用它，不能各自复制一套 View、
@@ -41,6 +42,7 @@ Standalone 适合快速检查 AXAML、编译绑定、命令和插件自身对象
 3. [临时部署、正式发布与验收](deployment-and-release.md)
 4. [Workflow Action Provider 与 Consumer 接入](workflow-actions.md)
 5. [Workbench Command 开发说明](workbench-commands.md)
+6. [G0001–G0003 重构实施档案](refactoring/README.md)
 
 ## 开发前记住
 
@@ -51,4 +53,4 @@ Standalone 适合快速检查 AXAML、编译绑定、命令和插件自身对象
   `PackageReference` 和 `ManagedPluginPrivatePackage`；完整示例见部署文档。
 - 当前交付目标是 Windows x64；插件替换后必须完整重启 Host，不支持热更新。
 - Workflow Action Provider 与 Consumer 是两种互斥角色，选择前先阅读专项文档，不要在同一插件中同时注册。
-- Workbench Command 只提升跨工作台有价值的用户意图；模板示例默认不占用快捷键。
+- Workbench Command 只提升跨工作台有价值的用户意图；G0001–G0003 当前保持零全局命令和零快捷键。

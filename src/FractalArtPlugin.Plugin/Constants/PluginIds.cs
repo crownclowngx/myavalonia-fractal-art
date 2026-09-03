@@ -1,24 +1,14 @@
 using MyAvaloniaManagement.PluginSdk;
-using MyAvaloniaManagement.PluginSdk.UI;
-
 namespace FractalArtPlugin.Constants;
 
 public static class PluginIds
 {
     public static readonly PluginId Plugin = new("myavalonia.plugin.fractal.art");
 
-    public static readonly DocumentTypeId MainDocument =
+    /// <summary>
+    /// 首个分形作品 Document 的持久身份。为兼容模板阶段已经产生的 Host 记录，
+    /// 身份值保持不变；代码名称改为产品语义名称。
+    /// </summary>
+    public static readonly DocumentTypeId FractalArtworkDocument =
         new("myavalonia.plugin.fractal.art.document.main");
-
-    /// <summary>获取模板示例文档向工作台公开的唯一命令身份。</summary>
-    /// <remarks>
-    /// 命令身份使用插件自己的命名空间，不能复用显示名称或 <see cref="System.Windows.Input.ICommand"/>
-    /// 实例作为跨菜单、快捷键和命令面板的公共身份。
-    /// </remarks>
-    public static readonly CommandId ApplyWorkbenchMessage =
-        new("myavalonia.plugin.fractal.art.command.main.apply-workbench-message");
-
-    /// <summary>获取示例命令在 Host Tools 共享菜单中的独立展示身份。</summary>
-    public static readonly CommandPlacementId ApplyWorkbenchMessageMenu =
-        new("myavalonia.plugin.fractal.art.command-placement.menu.tools.apply-workbench-message");
 }

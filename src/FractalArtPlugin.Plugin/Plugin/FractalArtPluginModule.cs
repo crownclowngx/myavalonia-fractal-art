@@ -1,6 +1,6 @@
 using MyAvaloniaManagement.PluginSdk.UI;
 using FractalArtPlugin.Constants;
-using FractalArtPlugin.Features.Main;
+using FractalArtPlugin.Features.Artwork;
 
 namespace FractalArtPlugin.Plugin;
 
@@ -11,31 +11,14 @@ public sealed class FractalArtPluginModule : IPluginModule
         ArgumentNullException.ThrowIfNull(registration);
 
         registration.Services.AddFractalArtPluginServices();
-        registration.AddDocument<MainDocument, MainView>(
+        registration.AddPersistableDocument<FractalArtworkDocument, FractalArtworkView>(
             new DocumentDescriptor(
-                PluginIds.MainDocument,
-                "示例文档",
-                "由独立预览程序和真实 Host 共用的示例功能",
-                "FractalArtPlugin"));
+                PluginIds.FractalArtworkDocument,
+                "分形作品",
+                "创建、保存并导出可重复生成的 Julia 分形作品",
+                "生成艺术"));
 
-        // Command 注册只冻结稳定身份、展示文本和目标 Document 类型，不保存 MainDocument 实例、
-        // ICommand、回调或 Provider。真正执行时由 Host 路由到当前活动的 MainDocument 实例。
-        registration.AddDocumentCommand(
-            new CommandDescriptor(
-                PluginIds.ApplyWorkbenchMessage,
-                "应用工作台示例消息",
-                "在当前示例文档实例中执行一条可等待的工作台命令。"),
-            PluginIds.MainDocument);
-        registration.AddMenuCommandContribution(
-            new MenuCommandContributionDescriptor(
-                PluginIds.ApplyWorkbenchMessageMenu,
-                PluginIds.ApplyWorkbenchMessage,
-                WorkbenchMenuLocations.ToolsShared,
-                group: "demo",
-                order: 0,
-                targetUnavailableBehavior: MenuCommandTargetUnavailableBehavior.Disable));
-
-        // 模板故意不默认注册快捷键。快捷键是全局稀缺资源，真实插件只有在产品语义稳定、
-        // 冲突政策和用户预期经过评审后，才应显式增加 KeyBindingContributionDescriptor。
+        // G0001 明确采用零 Tool、零 Workbench Command、零默认快捷键策略。
+        // 参数编辑、撤销、重做、预览和导出都是当前作品内部的意图，不占用 Host 的全局入口。
     }
 }
