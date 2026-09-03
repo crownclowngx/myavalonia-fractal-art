@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/FractalArtPlugin.Plugin/FractalArtPlugin.Plugin.csproj" />
+    <Project Path="src/FractalArtPlugin.Standalone/FractalArtPlugin.Standalone.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/FractalArtPlugin.Tests/FractalArtPlugin.Tests.csproj" />
+  </Folder>
+</Solution>

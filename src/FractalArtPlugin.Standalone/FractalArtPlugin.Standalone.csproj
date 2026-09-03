@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FractalArtPlugin.Plugin\FractalArtPlugin.Plugin.csproj" />
+    <PackageReference Include="Avalonia.Desktop" />
+  </ItemGroup>
+
+</Project>

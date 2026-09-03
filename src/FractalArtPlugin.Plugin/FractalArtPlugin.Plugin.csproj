@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <ManagedPlugin>true</ManagedPlugin>
+    <ManagedPluginId>myavalonia.plugin.fractal.art</ManagedPluginId>
+    <ManagedPluginDirectoryName>FractalArtPlugin</ManagedPluginDirectoryName>
+    <PluginVersion>1.0.0</PluginVersion>
+    <ManagedPluginRuntimeIdentifier>win-x64</ManagedPluginRuntimeIdentifier>
+    <ManagedPluginEntryType>FractalArtPlugin.Plugin.FractalArtPluginModule</ManagedPluginEntryType>
+    <ManagedPluginSdkMinInclusive>3.3.0</ManagedPluginSdkMinInclusive>
+    <ManagedPluginSdkMaxExclusive>4.0.0</ManagedPluginSdkMaxExclusive>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="MyAvaloniaManagement.Plugin.Build" PrivateAssets="all" />
+    <PackageReference Include="MyAvaloniaManagement.PluginSdk" />
+    <PackageReference Include="MyAvaloniaManagement.PluginSdk.UI" />
+  </ItemGroup>
+
+</Project>
