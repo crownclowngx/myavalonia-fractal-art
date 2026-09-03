@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using FractalArtPlugin.Domain;
 using FractalArtPlugin.Infrastructure;
 using Xunit;
 

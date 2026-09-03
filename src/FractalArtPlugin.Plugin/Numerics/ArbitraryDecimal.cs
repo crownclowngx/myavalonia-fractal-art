@@ -1,14 +1,14 @@
 using System.Globalization;
 using System.Numerics;
 
-namespace FractalArtPlugin.Domain;
+namespace FractalArtPlugin.Numerics;
 
 /// <summary>
 /// 用“任意长度整数 × 10 的整数次幂”保存用户可见的精确十进制数。
 /// </summary>
 /// <remarks>
-/// 该类型只承担作品参数、视口变换和持久化所需的十进制运算，不试图成为通用数学库。
-/// Julia 的逐像素热路径会把它转换为二进制定点数，避免每次迭代反复对齐十进制指数。
+/// 该类型只承担作品输入、持久化和视口几何，不进入逐像素迭代。这样公共数值边界可以保留完整校验，
+/// Julia 内核则可使用已由上下文验证的二进制定点原语，避免在热循环重复检查精度。
 /// </remarks>
 public readonly struct ArbitraryDecimal : IComparable<ArbitraryDecimal>, IEquatable<ArbitraryDecimal>
 {
@@ -38,8 +38,7 @@ public readonly struct ArbitraryDecimal : IComparable<ArbitraryDecimal>, IEquata
     public int Exponent { get; }
     public bool IsZero => Coefficient.IsZero;
     public int SignificantDigits => DigitCount(BigInteger.Abs(Coefficient));
-    public int AdjustedExponent => IsZero ? 0 : checked(Exponent + DigitCount(BigInteger.Abs(Coefficient)) - 1);
-
+    public int AdjustedExponent => IsZero ? 0 : checked(Exponent + SignificantDigits - 1);
     public static ArbitraryDecimal Zero => new(BigInteger.Zero, 0);
     public static ArbitraryDecimal One => new(BigInteger.One, 0);
 
@@ -92,8 +91,11 @@ public readonly struct ArbitraryDecimal : IComparable<ArbitraryDecimal>, IEquata
         }
 
         var fractionalDigits = separator < 0 ? 0 : significand.Length - separator - 1;
-        var digits = separator < 0 ? significand : string.Concat(significand.AsSpan(0, separator), significand.AsSpan(separator + 1));
-        if (digits.Length == 0 || digits.Length > MaximumInputDigits || digits.Any(character => character is < '0' or > '9'))
+        var digits = separator < 0
+            ? significand
+            : string.Concat(significand.AsSpan(0, separator), significand.AsSpan(separator + 1));
+        if (digits.Length == 0 || digits.Length > MaximumInputDigits ||
+            digits.Any(character => character is < '0' or > '9'))
         {
             return false;
         }
@@ -124,15 +126,12 @@ public readonly struct ArbitraryDecimal : IComparable<ArbitraryDecimal>, IEquata
         return new ArbitraryDecimal(left + right, commonExponent).Round(significantDigits);
     }
 
-    public ArbitraryDecimal Subtract(ArbitraryDecimal other, int significantDigits) =>
-        Add(other.Negate(), significantDigits);
+    public ArbitraryDecimal Subtract(ArbitraryDecimal other, int significantDigits) => Add(other.Negate(), significantDigits);
 
     public ArbitraryDecimal Multiply(ArbitraryDecimal other, int significantDigits)
     {
         ValidatePrecision(significantDigits);
-        return new ArbitraryDecimal(
-            Coefficient * other.Coefficient,
-            checked(Exponent + other.Exponent)).Round(significantDigits);
+        return new ArbitraryDecimal(Coefficient * other.Coefficient, checked(Exponent + other.Exponent)).Round(significantDigits);
     }
 
     public ArbitraryDecimal Divide(int divisor, int significantDigits)
@@ -148,8 +147,7 @@ public readonly struct ArbitraryDecimal : IComparable<ArbitraryDecimal>, IEquata
             return Zero;
         }
 
-        var extraDigits = Math.Max(0, significantDigits + DigitCount(BigInteger.Abs(divisor)) -
-            DigitCount(BigInteger.Abs(Coefficient)) + 2);
+        var extraDigits = Math.Max(0, significantDigits + DigitCount(BigInteger.Abs(divisor)) - SignificantDigits + 2);
         var scale = PowerOfTen(extraDigits);
         var quotient = BigInteger.DivRem(Coefficient * scale, divisor, out var remainder);
         if (BigInteger.Abs(remainder) * 2 >= BigInteger.Abs(divisor))
@@ -165,7 +163,7 @@ public readonly struct ArbitraryDecimal : IComparable<ArbitraryDecimal>, IEquata
     public ArbitraryDecimal Round(int significantDigits)
     {
         ValidatePrecision(significantDigits);
-        var digits = DigitCount(BigInteger.Abs(Coefficient));
+        var digits = SignificantDigits;
         if (IsZero || digits <= significantDigits)
         {
             return this;
@@ -239,75 +237,4 @@ public readonly struct ArbitraryDecimal : IComparable<ArbitraryDecimal>, IEquata
             throw new ArgumentOutOfRangeException(nameof(significantDigits));
         }
     }
-}
-
-/// <summary>集中实现鼠标平移和以指针为锚点的缩放，保证 UI 不直接操作高精度字符串。</summary>
-public static class HighPrecisionViewport
-{
-    public static JuliaDefinition Pan(
-        JuliaDefinition viewport,
-        double deltaX,
-        double deltaY,
-        double viewportHeight)
-    {
-        if (!double.IsFinite(deltaX) || !double.IsFinite(deltaY) || !double.IsFinite(viewportHeight) || viewportHeight <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(viewportHeight), "视口尺寸和拖动距离必须是有限数值。");
-        }
-
-        var digits = viewport.PrecisionDigits;
-        var scale = ArbitraryDecimal.Parse(viewport.Scale);
-        var xOffset = scale.Multiply(FromDouble(-deltaX), digits).Divide(Math.Max(1, (int)Math.Round(viewportHeight)), digits);
-        var yOffset = scale.Multiply(FromDouble(-deltaY), digits).Divide(Math.Max(1, (int)Math.Round(viewportHeight)), digits);
-        return viewport with
-        {
-            CenterX = ArbitraryDecimal.Parse(viewport.CenterX).Add(xOffset, digits).ToString(),
-            CenterY = ArbitraryDecimal.Parse(viewport.CenterY).Add(yOffset, digits).ToString()
-        };
-    }
-
-    public static JuliaDefinition ZoomAt(
-        JuliaDefinition viewport,
-        double pointerX,
-        double pointerY,
-        double viewportWidth,
-        double viewportHeight,
-        double wheelDelta)
-    {
-        if (!double.IsFinite(pointerX) || !double.IsFinite(pointerY) ||
-            !double.IsFinite(viewportWidth) || !double.IsFinite(viewportHeight) ||
-            viewportWidth <= 0 || viewportHeight <= 0 || wheelDelta == 0)
-        {
-            return viewport;
-        }
-
-        var digits = viewport.PrecisionDigits;
-        var steps = Math.Clamp((int)Math.Ceiling(Math.Abs(wheelDelta)), 1, 8);
-        var factor = ArbitraryDecimal.One;
-        var stepFactor = ArbitraryDecimal.Parse(wheelDelta > 0 ? "0.8" : "1.25");
-        for (var step = 0; step < steps; step++)
-        {
-            factor = factor.Multiply(stepFactor, digits);
-        }
-
-        var scale = ArbitraryDecimal.Parse(viewport.Scale);
-        var height = Math.Max(1, (int)Math.Round(viewportHeight));
-        var xFromCenter = FromDouble(pointerX - viewportWidth / 2d);
-        var yFromCenter = FromDouble(pointerY - viewportHeight / 2d);
-        var xOffset = scale.Multiply(xFromCenter, digits).Divide(height, digits);
-        var yOffset = scale.Multiply(yFromCenter, digits).Divide(height, digits);
-        var anchorShiftFactor = ArbitraryDecimal.One.Subtract(factor, digits);
-
-        return viewport with
-        {
-            CenterX = ArbitraryDecimal.Parse(viewport.CenterX)
-                .Add(xOffset.Multiply(anchorShiftFactor, digits), digits).ToString(),
-            CenterY = ArbitraryDecimal.Parse(viewport.CenterY)
-                .Add(yOffset.Multiply(anchorShiftFactor, digits), digits).ToString(),
-            Scale = scale.Multiply(factor, digits).ToString()
-        };
-    }
-
-    private static ArbitraryDecimal FromDouble(double value) =>
-        ArbitraryDecimal.Parse(value.ToString("R", CultureInfo.InvariantCulture));
 }

@@ -3,7 +3,6 @@ using System.IO.Compression;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 using FractalArtPlugin.Application;
-using FractalArtPlugin.Domain;
 using MyAvaloniaManagement.PluginSdk.UI;
 
 namespace FractalArtPlugin.Infrastructure;

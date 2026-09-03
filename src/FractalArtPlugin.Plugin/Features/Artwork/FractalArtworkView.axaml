@@ -46,7 +46,7 @@
           PointerReleased="HandlePointerReleased"
           PointerWheelChanged="HandlePointerWheelChanged">
         <Grid>
-          <Image Margin="12" Source="{Binding PreviewImage}" Stretch="Uniform" />
+          <Image x:Name="PreviewImageControl" Margin="12" Source="{Binding PreviewImage}" Stretch="Uniform" />
           <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#77819D" FontSize="16"
                      IsVisible="{Binding IsPreviewEmpty}"
                      Text="正在生成可重复的 Julia 预览…" />

@@ -42,3 +42,8 @@
 - 1024 位精度的最终全尺寸导出可能耗时明显；当前优先保证确定性、资源有界与可取消，尚未引入分块缓存；
 - 当前精度上限是产品资源边界，不代表无限精度或科研级误差证明；
 - 人工检查应确认不同 DPI 下预览清晰、文件选择器可用、取消按钮反馈自然。
+
+上述高精度性能和领域目录问题已在独立专项中完成代码与本地自动化，详见
+[专项计划](precision-performance/plan.md)、[优化设计](precision-performance/optimization-design.md)、
+[实施说明](precision-performance/implementation.md)、[基准记录](precision-performance/baseline.md)与
+[专项结果](precision-performance/result.md)。真实 Host 和不同 DPI 的人工验收仍待完成。

@@ -2,7 +2,6 @@ using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FractalArtPlugin.Application;
-using FractalArtPlugin.Domain;
 using MyAvaloniaManagement.PluginSdk;
 
 namespace FractalArtPlugin.Features.Artwork;
@@ -57,6 +56,7 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
     [ObservableProperty] private bool _isExporting;
     [ObservableProperty] private string _statusMessage = "正在准备 Julia 预览…";
     [ObservableProperty] private string _lastPreviewFingerprint = string.Empty;
+    [ObservableProperty] private TransientPreviewTransform _transientPreview = TransientPreviewTransform.Identity;
 
     public DocumentPresentationState Presentation => _presentation;
     public bool IsDirty => _revision != _acceptedRevision;
@@ -318,6 +318,7 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         {
             Julia = HighPrecisionViewport.Pan(_artwork.Julia, deltaX, deltaY, viewportHeight)
         };
+        TransientPreview = TransientPreview.Pan(deltaX, deltaY);
         TryMutate(candidate, recordHistory: _viewportInteractionStart is null);
     }
 
@@ -353,6 +354,14 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
                 viewportHeight,
                 wheelDelta)
         };
+        if (candidate == _artwork)
+        {
+            return;
+        }
+
+        var steps = Math.Clamp((int)Math.Ceiling(Math.Abs(wheelDelta)), 1, 8);
+        var factor = Math.Pow(wheelDelta > 0 ? 0.8d : 1.25d, steps);
+        TransientPreview = TransientPreview.Zoom(factor, pointerX, pointerY);
         TryMutate(candidate);
     }
 
@@ -444,40 +453,41 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         previous?.Cancel();
         previous?.Dispose();
         var generation = Interlocked.Increment(ref _previewGeneration);
-        var snapshot = _artwork;
-        var context = RenderContext.ForPreview(snapshot);
         IsRendering = true;
-        var precisionLabel = context.NumericPrecision == NumericPrecision.Arbitrary
-            ? $"任意精度 {context.PrecisionDigits} 位"
-            : "double 快速模式";
-        StatusMessage = $"正在渲染 {context.Width}×{context.Height} 交互预览 · {precisionLabel}…";
 
         try
         {
+            var snapshot = _artwork;
+            var requestedContext = RenderContext.ForPreview(snapshot);
+            // 连续输入先提交最低成本的真实预览；若用户开启精细预览，则同一 generation 在稳定后再提升质量。
+            // 两次结果都来自真实数值管线，暂态 Bitmap 变换只负责填补首个结果到达前的感知延迟。
+            var context = debounce && snapshot.Presentation.HighQualityPreview
+                ? RenderContext.ForPreview(snapshot with
+                {
+                    Presentation = snapshot.Presentation with { HighQualityPreview = false }
+                })
+                : requestedContext;
+            var precisionLabel = context.NumericPrecision == NumericPrecision.Arbitrary
+                ? $"任意精度 {context.EffectivePrecisionDigits}/{context.ConfiguredPrecisionDigits} 位"
+                : "double 快速模式";
+            StatusMessage = $"正在渲染 {context.Width}×{context.Height} 交互预览 · {precisionLabel}…";
             if (debounce)
             {
                 await Task.Delay(120, current.Token).ConfigureAwait(true);
             }
 
             var result = await _renderPipeline.RenderAsync(snapshot, context, current.Token).ConfigureAwait(true);
-            current.Token.ThrowIfCancellationRequested();
-            if (generation != Volatile.Read(ref _previewGeneration) || _lifetime.IsClosing || _disposed)
+            if (!TryCommitPreview(result, context, generation, current.Token))
             {
                 return;
             }
 
-            var bitmap = _previewImageFactory.Create(result, current.Token);
-            if (generation != Volatile.Read(ref _previewGeneration) || _lifetime.IsClosing || _disposed)
+            if (debounce && requestedContext.Width != context.Width)
             {
-                bitmap?.Dispose();
-                return;
+                await Task.Delay(160, current.Token).ConfigureAwait(true);
+                var detailed = await _renderPipeline.RenderAsync(snapshot, requestedContext, current.Token).ConfigureAwait(true);
+                TryCommitPreview(detailed, requestedContext, generation, current.Token);
             }
-
-            var old = PreviewImage;
-            PreviewImage = bitmap;
-            old?.Dispose();
-            LastPreviewFingerprint = RenderFingerprint.Create(result);
-            StatusMessage = $"预览完成 · {precisionLabel} · renderer v{context.RendererVersion} · {LastPreviewFingerprint}";
         }
         catch (OperationCanceledException) when (current.IsCancellationRequested)
         {
@@ -502,6 +512,41 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
                 IsRendering = false;
             }
         }
+    }
+
+    /// <summary>
+    /// 真实帧提交的唯一入口。generation 检查位于 Bitmap 创建前后；即使底层忽略取消，旧帧也无法覆盖新状态。
+    /// 成功提交后立即清除暂态变换，确保屏幕重新与真实像素坐标对齐。
+    /// </summary>
+    private bool TryCommitPreview(RgbaImage result, RenderContext context, long generation, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        if (generation != Volatile.Read(ref _previewGeneration) || _lifetime.IsClosing || _disposed)
+        {
+            return false;
+        }
+
+        var bitmap = _previewImageFactory.Create(result, token);
+        if (generation != Volatile.Read(ref _previewGeneration) || _lifetime.IsClosing || _disposed)
+        {
+            bitmap?.Dispose();
+            return false;
+        }
+
+        var old = PreviewImage;
+        PreviewImage = bitmap;
+        old?.Dispose();
+        TransientPreview = TransientPreviewTransform.Identity;
+        LastPreviewFingerprint = RenderFingerprint.Create(result);
+        var diagnostics = result.Diagnostics;
+        var fallback = diagnostics is { PrecisionFallbackPixels: > 0 }
+            ? $" · 回退 {diagnostics.PrecisionFallbackPixels} 像素"
+            : string.Empty;
+        var precision = context.NumericPrecision == NumericPrecision.Arbitrary
+            ? $"任意精度 {context.EffectivePrecisionDigits}/{context.ConfiguredPrecisionDigits} 位"
+            : "double 快速模式";
+        StatusMessage = $"预览完成 · {precision}{fallback} · renderer v{context.RendererVersion} · {LastPreviewFingerprint}";
+        return true;
     }
 
     private void NotifyArtworkProperties()

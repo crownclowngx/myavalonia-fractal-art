@@ -1,4 +1,3 @@
-using FractalArtPlugin.Domain;
 using Xunit;
 
 namespace FractalArtPlugin.Tests;
@@ -32,7 +31,9 @@ public sealed class ArbitraryPrecisionTests
         Assert.Equal(NumericPrecision.Arbitrary, context.NumericPrecision);
         Assert.Equal(320, context.Width);
         Assert.Equal(180, context.Height);
-        Assert.Equal(96, context.PrecisionDigits);
+        Assert.Equal(96, context.ConfiguredPrecisionDigits);
+        Assert.Equal(58, context.EffectivePrecisionDigits);
+        Assert.Contains("尺度", context.PrecisionReason, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -1,6 +1,5 @@
 using Avalonia.Media.Imaging;
 using FractalArtPlugin.Application;
-using FractalArtPlugin.Domain;
 using FractalArtPlugin.Features.Artwork;
 using MyAvaloniaManagement.PluginSdk;
 using Xunit;
@@ -146,6 +145,64 @@ public sealed class DocumentTests
         Assert.True(ArbitraryDecimal.Parse(document.Scale).CompareTo(originalScale) < 0);
     }
 
+    [Fact]
+    public async Task 交互先更新暂态呈现而真实帧提交后复位()
+    {
+        var pipeline = new ProgressivePipeline();
+        using var fixture = new DocumentFixture(pipeline);
+        var document = fixture.CreateDocument();
+        await document.InitializeAsync(new NewDocumentActivation("渐进预览"), CancellationToken.None);
+
+        document.BeginViewportInteraction();
+        document.PanViewport(12, -7, 600);
+
+        Assert.False(document.TransientPreview.IsIdentity);
+        Assert.Equal(12d, document.TransientPreview.OffsetX);
+        Assert.Equal(-7d, document.TransientPreview.OffsetY);
+        await pipeline.WaitForCallsAsync(2).WaitAsync(TimeSpan.FromSeconds(5));
+        await WaitUntilAsync(() => document.TransientPreview.IsIdentity);
+        document.EndViewportInteraction();
+    }
+
+    [Fact]
+    public async Task 精细交互预览先提交低成本真实帧再提升质量()
+    {
+        var pipeline = new ProgressivePipeline();
+        using var fixture = new DocumentFixture(pipeline);
+        var document = fixture.CreateDocument();
+        await document.InitializeAsync(new NewDocumentActivation("两阶段"), CancellationToken.None);
+
+        document.HighQualityPreview = true;
+        await pipeline.WaitForCallsAsync(3).WaitAsync(TimeSpan.FromSeconds(5));
+
+        var contexts = pipeline.Contexts.ToArray();
+        Assert.Equal(480, contexts[0].Width); // 初始化时的普通草稿。
+        Assert.Equal(480, contexts[1].Width); // 交互稳定后先给低成本真实帧。
+        Assert.Equal(960, contexts[2].Width); // 用户请求精细质量时随后提升。
+    }
+
+    [Fact]
+    public async Task 配置精度不足会在状态栏明确报告()
+    {
+        using var fixture = new DocumentFixture();
+        var document = fixture.CreateDocument();
+        await document.InitializeAsync(new NewDocumentActivation("精度不足"), CancellationToken.None);
+
+        document.PrecisionDigits = 32;
+        document.Scale = "1e-24";
+
+        Assert.Contains("配置精度不足", document.StatusMessage, StringComparison.Ordinal);
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> predicate)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while (!predicate())
+        {
+            await Task.Delay(10, timeout.Token);
+        }
+    }
+
     private sealed class DocumentFixture : IDisposable
     {
         private readonly TestLifetime _lifetime = new();
@@ -208,6 +265,58 @@ public sealed class DocumentTests
             var constantReal = ArbitraryDecimal.Parse(constantRealText).ToDouble();
             var value = (byte)Math.Clamp((int)Math.Round((constantReal + 2) * 50), 0, 255);
             return new RgbaImage(1, 1, [value, 0, 0, 255]);
+        }
+    }
+
+    private sealed class ProgressivePipeline : IArtworkRenderPipeline
+    {
+        private readonly object _sync = new();
+        private readonly List<RenderContext> _contexts = [];
+        private readonly List<(int Target, TaskCompletionSource Completion)> _waiters = [];
+
+        public IReadOnlyList<RenderContext> Contexts
+        {
+            get
+            {
+                lock (_sync)
+                {
+                    return _contexts.ToArray();
+                }
+            }
+        }
+
+        public Task WaitForCallsAsync(int count)
+        {
+            lock (_sync)
+            {
+                if (_contexts.Count >= count)
+                {
+                    return Task.CompletedTask;
+                }
+
+                var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                _waiters.Add((count, completion));
+                return completion.Task;
+            }
+        }
+
+        public Task<RgbaImage> RenderAsync(
+            ArtworkDefinition artwork,
+            RenderContext context,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            lock (_sync)
+            {
+                _contexts.Add(context);
+                foreach (var waiter in _waiters.Where(waiter => _contexts.Count >= waiter.Target).ToArray())
+                {
+                    waiter.Completion.TrySetResult();
+                    _waiters.Remove(waiter);
+                }
+            }
+
+            return Task.FromResult(ControlledPipeline.CreateImage(artwork.Julia.ConstantReal));
         }
     }
 

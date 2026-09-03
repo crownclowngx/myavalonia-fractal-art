@@ -1,6 +1,5 @@
 using System.Text.Json;
 using System.Globalization;
-using FractalArtPlugin.Domain;
 using MyAvaloniaManagement.PluginSdk;
 
 namespace FractalArtPlugin.Application;

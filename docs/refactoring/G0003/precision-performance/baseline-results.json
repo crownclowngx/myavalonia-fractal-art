@@ -1,0 +1,349 @@
+{
+  "CreatedAt": "2026-09-03T10:35:22.1076668+08:00",
+  "MachineName": "GAOXU",
+  "OperatingSystem": "Microsoft Windows NT 10.0.26200.0",
+  "Runtime": "10.0.10",
+  "LogicalProcessorCount": 14,
+  "Processor": "Intel64 Family 6 Model 197 Stepping 2, GenuineIntel",
+  "GitCommit": "68248fe038563c70824fe26b4909289289a5dcdf",
+  "Command": "dotnet run --project tools/FractalArtPlugin.Benchmarks -c Release -- \u003Coutput.json\u003E",
+  "Scenarios": [
+    {
+      "Scenario": {
+        "Name": "normal-double",
+        "Scale": "3.2",
+        "PrecisionDigits": 96,
+        "ForceHighPrecision": false,
+        "Iterations": 96,
+        "Width": 80,
+        "Height": 60
+      },
+      "Samples": [
+        {
+          "ElapsedMilliseconds": 0.5649,
+          "AllocatedBytes": 34968,
+          "Gen0Collections": 0,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 0
+        },
+        {
+          "ElapsedMilliseconds": 0.6338,
+          "AllocatedBytes": 27032,
+          "Gen0Collections": 0,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 0
+        },
+        {
+          "ElapsedMilliseconds": 0.2622,
+          "AllocatedBytes": 26168,
+          "Gen0Collections": 0,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 0
+        },
+        {
+          "ElapsedMilliseconds": 0.2468,
+          "AllocatedBytes": 26168,
+          "Gen0Collections": 0,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 0
+        },
+        {
+          "ElapsedMilliseconds": 0.2209,
+          "AllocatedBytes": 26168,
+          "Gen0Collections": 0,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 0
+        }
+      ],
+      "MedianMilliseconds": 0.2622,
+      "P95Milliseconds": 0.6338,
+      "PixelsPerSecond": 18306636.155606408,
+      "MaximumIterationsPerSecond": 1757437070.9382153,
+      "Fingerprint": "7e48c474df9a9443",
+      "ReferencePoints": {
+        "top-left": {
+          "X": 0,
+          "Y": 0,
+          "Value": 0.007955148,
+          "Escaped": true
+        },
+        "center": {
+          "X": 40,
+          "Y": 30,
+          "Value": 0.32108843,
+          "Escaped": true
+        },
+        "right-edge": {
+          "X": 79,
+          "Y": 30,
+          "Value": 0.04242229,
+          "Escaped": true
+        },
+        "bottom-right": {
+          "X": 79,
+          "Y": 59,
+          "Value": 0.0138966385,
+          "Escaped": true
+        }
+      }
+    },
+    {
+      "Scenario": {
+        "Name": "deep-96",
+        "Scale": "1e-80",
+        "PrecisionDigits": 96,
+        "ForceHighPrecision": true,
+        "Iterations": 96,
+        "Width": 48,
+        "Height": 32
+      },
+      "Samples": [
+        {
+          "ElapsedMilliseconds": 391.2743,
+          "AllocatedBytes": 226773336,
+          "Gen0Collections": 24,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 421.875
+        },
+        {
+          "ElapsedMilliseconds": 111.2224,
+          "AllocatedBytes": 226771280,
+          "Gen0Collections": 24,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 109.375
+        },
+        {
+          "ElapsedMilliseconds": 109.9559,
+          "AllocatedBytes": 226772240,
+          "Gen0Collections": 24,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 109.375
+        },
+        {
+          "ElapsedMilliseconds": 108.5698,
+          "AllocatedBytes": 226772240,
+          "Gen0Collections": 24,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 109.375
+        },
+        {
+          "ElapsedMilliseconds": 109.9241,
+          "AllocatedBytes": 226772240,
+          "Gen0Collections": 24,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 109.375
+        }
+      ],
+      "MedianMilliseconds": 109.9559,
+      "P95Milliseconds": 391.2743,
+      "PixelsPerSecond": 13969.236757645565,
+      "MaximumIterationsPerSecond": 1341046.7287339743,
+      "Fingerprint": "129fcaf38794df7a",
+      "ReferencePoints": {
+        "top-left": {
+          "X": 0,
+          "Y": 0,
+          "Value": 1,
+          "Escaped": false
+        },
+        "center": {
+          "X": 24,
+          "Y": 16,
+          "Value": 1,
+          "Escaped": false
+        },
+        "right-edge": {
+          "X": 47,
+          "Y": 16,
+          "Value": 1,
+          "Escaped": false
+        },
+        "bottom-right": {
+          "X": 47,
+          "Y": 31,
+          "Value": 1,
+          "Escaped": false
+        }
+      }
+    },
+    {
+      "Scenario": {
+        "Name": "deep-256",
+        "Scale": "1e-220",
+        "PrecisionDigits": 256,
+        "ForceHighPrecision": true,
+        "Iterations": 96,
+        "Width": 32,
+        "Height": 24
+      },
+      "Samples": [
+        {
+          "ElapsedMilliseconds": 141.1314,
+          "AllocatedBytes": 229897888,
+          "Gen0Collections": 24,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 140.625
+        },
+        {
+          "ElapsedMilliseconds": 140.9747,
+          "AllocatedBytes": 229897888,
+          "Gen0Collections": 24,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 140.625
+        },
+        {
+          "ElapsedMilliseconds": 139.7165,
+          "AllocatedBytes": 229897888,
+          "Gen0Collections": 24,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 140.625
+        },
+        {
+          "ElapsedMilliseconds": 140.1557,
+          "AllocatedBytes": 229897888,
+          "Gen0Collections": 24,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 140.625
+        },
+        {
+          "ElapsedMilliseconds": 143.8567,
+          "AllocatedBytes": 229897888,
+          "Gen0Collections": 24,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 140.625
+        }
+      ],
+      "MedianMilliseconds": 140.9747,
+      "P95Milliseconds": 143.8567,
+      "PixelsPerSecond": 5447.786021179687,
+      "MaximumIterationsPerSecond": 522987.4580332499,
+      "Fingerprint": "87f88b15c42a85a1",
+      "ReferencePoints": {
+        "top-left": {
+          "X": 0,
+          "Y": 0,
+          "Value": 1,
+          "Escaped": false
+        },
+        "center": {
+          "X": 16,
+          "Y": 12,
+          "Value": 1,
+          "Escaped": false
+        },
+        "right-edge": {
+          "X": 31,
+          "Y": 12,
+          "Value": 1,
+          "Escaped": false
+        },
+        "bottom-right": {
+          "X": 31,
+          "Y": 23,
+          "Value": 1,
+          "Escaped": false
+        }
+      }
+    },
+    {
+      "Scenario": {
+        "Name": "extreme-1024",
+        "Scale": "1e-1000",
+        "PrecisionDigits": 1024,
+        "ForceHighPrecision": true,
+        "Iterations": 64,
+        "Width": 16,
+        "Height": 12
+      },
+      "Samples": [
+        {
+          "ElapsedMilliseconds": 177.4873,
+          "AllocatedBytes": 132241800,
+          "Gen0Collections": 14,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 187.5
+        },
+        {
+          "ElapsedMilliseconds": 169.7651,
+          "AllocatedBytes": 132241640,
+          "Gen0Collections": 14,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 156.25
+        },
+        {
+          "ElapsedMilliseconds": 167.877,
+          "AllocatedBytes": 132241640,
+          "Gen0Collections": 14,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 171.875
+        },
+        {
+          "ElapsedMilliseconds": 167.72,
+          "AllocatedBytes": 132241640,
+          "Gen0Collections": 14,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 171.875
+        },
+        {
+          "ElapsedMilliseconds": 164.2434,
+          "AllocatedBytes": 132241640,
+          "Gen0Collections": 14,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 156.25
+        }
+      ],
+      "MedianMilliseconds": 167.877,
+      "P95Milliseconds": 177.4873,
+      "PixelsPerSecond": 1143.694490609196,
+      "MaximumIterationsPerSecond": 73196.44739898854,
+      "Fingerprint": "6e243eb8828cc0d3",
+      "ReferencePoints": {
+        "top-left": {
+          "X": 0,
+          "Y": 0,
+          "Value": 1,
+          "Escaped": false
+        },
+        "center": {
+          "X": 8,
+          "Y": 6,
+          "Value": 1,
+          "Escaped": false
+        },
+        "right-edge": {
+          "X": 15,
+          "Y": 6,
+          "Value": 1,
+          "Escaped": false
+        },
+        "bottom-right": {
+          "X": 15,
+          "Y": 11,
+          "Value": 1,
+          "Escaped": false
+        }
+      }
+    }
+  ],
+  "CancellationResponseMilliseconds": 133.6915
+}

@@ -43,6 +43,7 @@ Standalone 适合快速检查 AXAML、编译绑定、命令和插件自身对象
 4. [Workflow Action Provider 与 Consumer 接入](workflow-actions.md)
 5. [Workbench Command 开发说明](workbench-commands.md)
 6. [G0001–G0003 重构实施档案](refactoring/README.md)
+7. [G0003 高精度性能与领域模块化专项档案](refactoring/G0003/precision-performance/result.md)
 
 ## 开发前记住
 

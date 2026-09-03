@@ -1,5 +1,4 @@
 using FractalArtPlugin.Application;
-using FractalArtPlugin.Domain;
 using FractalArtPlugin.Infrastructure;
 using Xunit;
 

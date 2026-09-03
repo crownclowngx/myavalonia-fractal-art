@@ -1,0 +1,388 @@
+{
+  "CreatedAt": "2026-09-03T10:54:27.0639505+08:00",
+  "MachineName": "GAOXU",
+  "OperatingSystem": "Microsoft Windows NT 10.0.26200.0",
+  "Runtime": "10.0.10",
+  "LogicalProcessorCount": 14,
+  "Processor": "Intel64 Family 6 Model 197 Stepping 2, GenuineIntel",
+  "GitCommit": "68248fe038563c70824fe26b4909289289a5dcdf",
+  "Command": "dotnet run --project tools/FractalArtPlugin.Benchmarks -c Release -- \u003Coutput.json\u003E",
+  "Scenarios": [
+    {
+      "Scenario": {
+        "Name": "normal-double",
+        "Scale": "3.2",
+        "PrecisionDigits": 96,
+        "ForceHighPrecision": false,
+        "Iterations": 96,
+        "Width": 80,
+        "Height": 60
+      },
+      "Samples": [
+        {
+          "ElapsedMilliseconds": 0.7664,
+          "AllocatedBytes": 35096,
+          "Gen0Collections": 0,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 0
+        },
+        {
+          "ElapsedMilliseconds": 0.2192,
+          "AllocatedBytes": 27160,
+          "Gen0Collections": 0,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 0
+        },
+        {
+          "ElapsedMilliseconds": 0.2148,
+          "AllocatedBytes": 26296,
+          "Gen0Collections": 0,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 0
+        },
+        {
+          "ElapsedMilliseconds": 0.2192,
+          "AllocatedBytes": 26296,
+          "Gen0Collections": 0,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 0
+        },
+        {
+          "ElapsedMilliseconds": 0.4575,
+          "AllocatedBytes": 26296,
+          "Gen0Collections": 0,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 0
+        }
+      ],
+      "MedianMilliseconds": 0.2192,
+      "P95Milliseconds": 0.7664,
+      "PixelsPerSecond": 21897810.2189781,
+      "MaximumIterationsPerSecond": 2102189781.0218976,
+      "Fingerprint": "7e48c474df9a9443",
+      "ReferencePoints": {
+        "top-left": {
+          "X": 0,
+          "Y": 0,
+          "Value": 0.007955148,
+          "Escaped": true
+        },
+        "center": {
+          "X": 40,
+          "Y": 30,
+          "Value": 0.32108843,
+          "Escaped": true
+        },
+        "right-edge": {
+          "X": 79,
+          "Y": 30,
+          "Value": 0.04242229,
+          "Escaped": true
+        },
+        "bottom-right": {
+          "X": 79,
+          "Y": 59,
+          "Value": 0.0138966385,
+          "Escaped": true
+        }
+      },
+      "Diagnostics": {
+        "Kernel": "double",
+        "ConfiguredPrecisionDigits": 96,
+        "EffectivePrecisionDigits": 16,
+        "MaxDegreeOfParallelism": 1,
+        "PrecisionFallbackPixels": 0,
+        "PerturbationGlitchPixels": 0
+      }
+    },
+    {
+      "Scenario": {
+        "Name": "deep-96",
+        "Scale": "1e-80",
+        "PrecisionDigits": 96,
+        "ForceHighPrecision": true,
+        "Iterations": 96,
+        "Width": 48,
+        "Height": 32
+      },
+      "Samples": [
+        {
+          "ElapsedMilliseconds": 3.1881,
+          "AllocatedBytes": 478768,
+          "Gen0Collections": 0,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 0
+        },
+        {
+          "ElapsedMilliseconds": 2.4846,
+          "AllocatedBytes": 478880,
+          "Gen0Collections": 0,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 0
+        },
+        {
+          "ElapsedMilliseconds": 2.3874,
+          "AllocatedBytes": 478816,
+          "Gen0Collections": 0,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 125
+        },
+        {
+          "ElapsedMilliseconds": 2.1077,
+          "AllocatedBytes": 478816,
+          "Gen0Collections": 0,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 0
+        },
+        {
+          "ElapsedMilliseconds": 2.2381,
+          "AllocatedBytes": 478816,
+          "Gen0Collections": 0,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 0
+        }
+      ],
+      "MedianMilliseconds": 2.3874,
+      "P95Milliseconds": 3.1881,
+      "PixelsPerSecond": 643377.7330987685,
+      "MaximumIterationsPerSecond": 61764262.37748178,
+      "Fingerprint": "129fcaf38794df7a",
+      "ReferencePoints": {
+        "top-left": {
+          "X": 0,
+          "Y": 0,
+          "Value": 1,
+          "Escaped": false
+        },
+        "center": {
+          "X": 24,
+          "Y": 16,
+          "Value": 1,
+          "Escaped": false
+        },
+        "right-edge": {
+          "X": 47,
+          "Y": 16,
+          "Value": 1,
+          "Escaped": false
+        },
+        "bottom-right": {
+          "X": 47,
+          "Y": 31,
+          "Value": 1,
+          "Escaped": false
+        }
+      },
+      "Diagnostics": {
+        "Kernel": "perturbation-experiment",
+        "ConfiguredPrecisionDigits": 96,
+        "EffectivePrecisionDigits": 96,
+        "MaxDegreeOfParallelism": 8,
+        "PrecisionFallbackPixels": 0,
+        "PerturbationGlitchPixels": 0
+      }
+    },
+    {
+      "Scenario": {
+        "Name": "deep-256",
+        "Scale": "1e-220",
+        "PrecisionDigits": 256,
+        "ForceHighPrecision": true,
+        "Iterations": 96,
+        "Width": 32,
+        "Height": 24
+      },
+      "Samples": [
+        {
+          "ElapsedMilliseconds": 1.7866,
+          "AllocatedBytes": 462760,
+          "Gen0Collections": 0,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 0
+        },
+        {
+          "ElapsedMilliseconds": 2.0563,
+          "AllocatedBytes": 462504,
+          "Gen0Collections": 0,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 0
+        },
+        {
+          "ElapsedMilliseconds": 1.9128,
+          "AllocatedBytes": 462504,
+          "Gen0Collections": 0,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 0
+        },
+        {
+          "ElapsedMilliseconds": 2.135,
+          "AllocatedBytes": 462440,
+          "Gen0Collections": 0,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 93.75
+        },
+        {
+          "ElapsedMilliseconds": 1.7804,
+          "AllocatedBytes": 462440,
+          "Gen0Collections": 0,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 0
+        }
+      ],
+      "MedianMilliseconds": 1.9128,
+      "P95Milliseconds": 2.135,
+      "PixelsPerSecond": 401505.6461731493,
+      "MaximumIterationsPerSecond": 38544542.03262233,
+      "Fingerprint": "87f88b15c42a85a1",
+      "ReferencePoints": {
+        "top-left": {
+          "X": 0,
+          "Y": 0,
+          "Value": 1,
+          "Escaped": false
+        },
+        "center": {
+          "X": 16,
+          "Y": 12,
+          "Value": 1,
+          "Escaped": false
+        },
+        "right-edge": {
+          "X": 31,
+          "Y": 12,
+          "Value": 1,
+          "Escaped": false
+        },
+        "bottom-right": {
+          "X": 31,
+          "Y": 23,
+          "Value": 1,
+          "Escaped": false
+        }
+      },
+      "Diagnostics": {
+        "Kernel": "perturbation-experiment",
+        "ConfiguredPrecisionDigits": 256,
+        "EffectivePrecisionDigits": 236,
+        "MaxDegreeOfParallelism": 8,
+        "PrecisionFallbackPixels": 0,
+        "PerturbationGlitchPixels": 0
+      }
+    },
+    {
+      "Scenario": {
+        "Name": "extreme-1024",
+        "Scale": "1e-1000",
+        "PrecisionDigits": 1024,
+        "ForceHighPrecision": true,
+        "Iterations": 64,
+        "Width": 16,
+        "Height": 12
+      },
+      "Samples": [
+        {
+          "ElapsedMilliseconds": 1.6506,
+          "AllocatedBytes": 719272,
+          "Gen0Collections": 0,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 0
+        },
+        {
+          "ElapsedMilliseconds": 1.5802,
+          "AllocatedBytes": 716224,
+          "Gen0Collections": 0,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 0
+        },
+        {
+          "ElapsedMilliseconds": 1.6106,
+          "AllocatedBytes": 715624,
+          "Gen0Collections": 0,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 0
+        },
+        {
+          "ElapsedMilliseconds": 1.6718,
+          "AllocatedBytes": 715688,
+          "Gen0Collections": 0,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 0
+        },
+        {
+          "ElapsedMilliseconds": 1.7918,
+          "AllocatedBytes": 715624,
+          "Gen0Collections": 0,
+          "Gen1Collections": 0,
+          "Gen2Collections": 0,
+          "CpuMilliseconds": 62.5
+        }
+      ],
+      "MedianMilliseconds": 1.6506,
+      "P95Milliseconds": 1.7918,
+      "PixelsPerSecond": 116321.3376953835,
+      "MaximumIterationsPerSecond": 7444565.612504544,
+      "Fingerprint": "6e243eb8828cc0d3",
+      "ReferencePoints": {
+        "top-left": {
+          "X": 0,
+          "Y": 0,
+          "Value": 1,
+          "Escaped": false
+        },
+        "center": {
+          "X": 8,
+          "Y": 6,
+          "Value": 1,
+          "Escaped": false
+        },
+        "right-edge": {
+          "X": 15,
+          "Y": 6,
+          "Value": 1,
+          "Escaped": false
+        },
+        "bottom-right": {
+          "X": 15,
+          "Y": 11,
+          "Value": 1,
+          "Escaped": false
+        }
+      },
+      "Diagnostics": {
+        "Kernel": "perturbation-experiment",
+        "ConfiguredPrecisionDigits": 1024,
+        "EffectivePrecisionDigits": 1016,
+        "MaxDegreeOfParallelism": 8,
+        "PrecisionFallbackPixels": 0,
+        "PerturbationGlitchPixels": 0
+      }
+    }
+  ],
+  "CancellationResponseMilliseconds": 2.846,
+  "CancellationSamplesMilliseconds": [
+    2.846,
+    0.3355,
+    0.374,
+    0.3059,
+    0.4696
+  ]
+}

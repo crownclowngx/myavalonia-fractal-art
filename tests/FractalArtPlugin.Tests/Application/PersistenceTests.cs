@@ -1,6 +1,5 @@
 using System.Text.Json;
 using FractalArtPlugin.Application;
-using FractalArtPlugin.Domain;
 using MyAvaloniaManagement.PluginSdk;
 using Xunit;
 
@@ -112,5 +111,18 @@ public sealed class PersistenceTests
         Assert.Equal(-0.12, ArbitraryDecimal.Parse(migrated.Julia.CenterX).ToDouble(), 12);
         Assert.Equal(96, migrated.Julia.PrecisionDigits);
         Assert.False(migrated.Julia.ForceHighPrecision);
+    }
+
+    [Fact]
+    public void V2快照不保存有效精度线程数内核或暂态预览状态()
+    {
+        var content = _codec.Encode(ArtworkDefinition.CreateDefault());
+        var json = content.Payload.GetRawText();
+
+        Assert.DoesNotContain("effectivePrecision", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("maxDegree", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("kernel", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("transient", json, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(2, content.Payload.GetProperty("formatVersion").GetInt32());
     }
 }

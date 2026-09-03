@@ -1,6 +1,5 @@
 using System.Security.Cryptography;
 using Avalonia.Media.Imaging;
-using FractalArtPlugin.Domain;
 
 namespace FractalArtPlugin.Application;
 

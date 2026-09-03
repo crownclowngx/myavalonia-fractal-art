@@ -1,6 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
 using FractalArtPlugin.Application;
-using FractalArtPlugin.Domain;
 using FractalArtPlugin.Infrastructure;
 
 namespace FractalArtPlugin.Plugin;

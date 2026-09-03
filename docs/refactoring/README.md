@@ -11,6 +11,11 @@
 | G0002 作品领域模型与空持久化闭环 | [计划](G0002/plan.md) | [方案](G0002/implementation.md) | [结果](G0002/result.md) |
 | G0003 第一条 Julia 纵向渲染切片 | [计划](G0003/plan.md) | [方案](G0003/implementation.md) | [结果](G0003/result.md) |
 
+G0003 后续的高精度性能与 Domain 模块化工作已独立实施并完成本地自动化，见
+[专项计划](G0003/precision-performance/plan.md)、[优化设计](G0003/precision-performance/optimization-design.md)、
+[实施说明](G0003/precision-performance/implementation.md)、[基准](G0003/precision-performance/baseline.md)和
+[结果](G0003/precision-performance/result.md)。它不占用 G0004 阶段编号，真实 Host 人工验收仍待完成。
+
 共同工程约束、SOLID 落点、测试矩阵和本轮明确排除的 CI/发布门禁见
 [质量基线与门禁](quality-baseline.md)。
 
