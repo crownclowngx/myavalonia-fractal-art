@@ -7,5 +7,31 @@
     MinWidth="980"
     MinHeight="680"
     Title="Fractal Art · Standalone Preview">
-  <ContentControl x:Name="PreviewHost" />
+  <Grid>
+    <ContentControl x:Name="PreviewHost" />
+    <Border
+        x:Name="StartupFailurePanel"
+        Margin="24"
+        Padding="24"
+        HorizontalAlignment="Center"
+        VerticalAlignment="Center"
+        Background="#241419"
+        BorderBrush="#C95766"
+        BorderThickness="1"
+        CornerRadius="8"
+        IsVisible="False"
+        MaxWidth="720">
+      <StackPanel Spacing="10">
+        <TextBlock FontSize="20" FontWeight="SemiBold" Foreground="#FFE9EC" Text="Standalone 初始化失败" />
+        <TextBlock
+            x:Name="StartupFailureText"
+            Foreground="#F2BDC5"
+            TextWrapping="Wrap" />
+        <TextBlock
+            Foreground="#B98B92"
+            Text="详细异常同时写入调试输出；关闭窗口后可以修正问题并重新启动。"
+            TextWrapping="Wrap" />
+      </StackPanel>
+    </Border>
+  </Grid>
 </Window>

@@ -39,6 +39,9 @@ dotnet format FractalArtPlugin.slnx --verify-no-changes --no-restore
 - 快速改参时迟到结果不提交；
 - 草稿预览与最终画布分离、PNG 签名/IHDR、导出取消与原子写入。
 
+Standalone 烟雾验证必须确认窗口句柄非零且标题可见。仅检查进程仍在运行无法区分正常 GUI 与 UI 线程死锁，
+不得作为启动成功证据。
+
 ## 本轮不纳入门禁
 
 - 不创建 GitHub Actions、Azure DevOps 或其他 Windows CI；
