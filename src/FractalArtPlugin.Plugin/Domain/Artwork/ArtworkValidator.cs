@@ -24,7 +24,13 @@ internal sealed class ArtworkValidator : IArtworkValidator
             throw new InvalidDataException("画布尺寸必须位于 64–8192，且总像素不能超过 64M。");
         }
 
+        if (!Enum.IsDefined(artwork.GeneratorKind))
+        {
+            throw new InvalidDataException("作品生成器类型非法。");
+        }
+
         ValidateJulia(artwork.Julia);
+        ValidateRecursiveTree(artwork.RecursiveTree);
 
         if (string.IsNullOrWhiteSpace(artwork.Presentation.SelectedSection) ||
             artwork.Presentation.SelectedSection.Length > 32)
@@ -33,6 +39,37 @@ internal sealed class ArtworkValidator : IArtworkValidator
         }
 
         ValidateExploration(artwork.Exploration);
+    }
+
+    /// <summary>
+    /// 递归树的参数会指数级放大线段数量，不能只验证每个字段的独立范围。这里同时计算完整几何预算，
+    /// 让 UI、变体、恢复和渲染共用同一条 50,000 线段硬边界。
+    /// </summary>
+    private static void ValidateRecursiveTree(RecursiveTreeDefinition tree)
+    {
+        ArgumentNullException.ThrowIfNull(tree);
+        if (tree.Depth is < 1 or > 12 || tree.Branches is < 2 or > 3 ||
+            !double.IsFinite(tree.BranchAngleDegrees) || tree.BranchAngleDegrees is < 5 or > 85 ||
+            !double.IsFinite(tree.LengthDecay) || tree.LengthDecay is < 0.45 or > 0.85 ||
+            !double.IsFinite(tree.Randomness) || tree.Randomness is < 0 or > 1 ||
+            !double.IsFinite(tree.TrunkLength) || tree.TrunkLength is < 0.05 or > 0.6 ||
+            !double.IsFinite(tree.StrokeWidth) || tree.StrokeWidth is < 0.5 or > 40)
+        {
+            throw new InvalidDataException("递归树参数超出深度、分叉、角度、衰减、随机度、长度或线宽预算。");
+        }
+
+        var segmentCount = 0L;
+        var levelCount = 1L;
+        for (var level = 0; level < tree.Depth; level++)
+        {
+            segmentCount += levelCount;
+            levelCount *= tree.Branches;
+        }
+
+        if (segmentCount > 50_000)
+        {
+            throw new InvalidDataException("递归树线段总量不能超过 50,000。");
+        }
     }
 
     private static void ValidateJulia(JuliaDefinition julia)
@@ -121,7 +158,13 @@ internal sealed class ArtworkValidator : IArtworkValidator
     private static void ValidateRecipe(VariationRecipeDefinition recipe)
     {
         ArgumentNullException.ThrowIfNull(recipe);
+        if (!Enum.IsDefined(recipe.GeneratorKind))
+        {
+            throw new InvalidDataException("候选生成器类型非法。");
+        }
+
         ValidateJulia(recipe.Julia);
+        ValidateRecursiveTree(recipe.RecursiveTree);
     }
 
     private static bool IsValidIdentity(string? value) =>

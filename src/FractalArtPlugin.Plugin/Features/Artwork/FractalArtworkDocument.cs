@@ -67,7 +67,7 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
     [ObservableProperty] private bool _isRendering;
     [ObservableProperty] private bool _isExporting;
     [ObservableProperty] private bool _isExploring;
-    [ObservableProperty] private string _statusMessage = "正在准备 Julia 预览…";
+    [ObservableProperty] private string _statusMessage = "正在准备分形预览…";
     [ObservableProperty] private string _lastPreviewFingerprint = string.Empty;
     [ObservableProperty] private TransientPreviewTransform _transientPreview = TransientPreviewTransform.Identity;
 
@@ -83,6 +83,9 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
     public IReadOnlyList<FavoriteVariationDefinition> Favorites => _artwork.Exploration.Favorites;
     public IReadOnlyList<ArtworkPresetDefinition> ArtworkPresets => _presetCatalog.ArtworkPresets;
     public IReadOnlyList<PalettePresetDefinition> PalettePresets => _presetCatalog.PalettePresets;
+    public bool IsJuliaGenerator => _artwork.GeneratorKind == FractalGeneratorKind.Julia;
+    public bool IsRecursiveTreeGenerator => _artwork.GeneratorKind == FractalGeneratorKind.RecursiveTree;
+    public string GeneratorKindName => IsRecursiveTreeGenerator ? "递归树路径" : "Julia 标量场";
 
     /// <summary>
     /// 艺术滑杆每次都从 Julia 真实参数反算，setter 也立即写回 Julia；快照中不存在 Detail/Flow/Curl 副本。
@@ -227,6 +230,62 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
 
             TryMutate(_artwork with { Julia = _artwork.Julia with { PrecisionDigits = value } });
         }
+    }
+
+    public int TreeDepth
+    {
+        get => _artwork.RecursiveTree.Depth;
+        set => TryMutate(value == TreeDepth
+            ? _artwork
+            : _artwork with { RecursiveTree = _artwork.RecursiveTree with { Depth = value } });
+    }
+
+    public int TreeBranches
+    {
+        get => _artwork.RecursiveTree.Branches;
+        set => TryMutate(value == TreeBranches
+            ? _artwork
+            : _artwork with { RecursiveTree = _artwork.RecursiveTree with { Branches = value } });
+    }
+
+    public double TreeBranchAngle
+    {
+        get => _artwork.RecursiveTree.BranchAngleDegrees;
+        set => TryMutate(value.Equals(TreeBranchAngle)
+            ? _artwork
+            : _artwork with { RecursiveTree = _artwork.RecursiveTree with { BranchAngleDegrees = value } });
+    }
+
+    public double TreeLengthDecay
+    {
+        get => _artwork.RecursiveTree.LengthDecay;
+        set => TryMutate(value.Equals(TreeLengthDecay)
+            ? _artwork
+            : _artwork with { RecursiveTree = _artwork.RecursiveTree with { LengthDecay = value } });
+    }
+
+    public double TreeRandomness
+    {
+        get => _artwork.RecursiveTree.Randomness;
+        set => TryMutate(value.Equals(TreeRandomness)
+            ? _artwork
+            : _artwork with { RecursiveTree = _artwork.RecursiveTree with { Randomness = value } });
+    }
+
+    public double TreeTrunkLength
+    {
+        get => _artwork.RecursiveTree.TrunkLength;
+        set => TryMutate(value.Equals(TreeTrunkLength)
+            ? _artwork
+            : _artwork with { RecursiveTree = _artwork.RecursiveTree with { TrunkLength = value } });
+    }
+
+    public double TreeStrokeWidth
+    {
+        get => _artwork.RecursiveTree.StrokeWidth;
+        set => TryMutate(value.Equals(TreeStrokeWidth)
+            ? _artwork
+            : _artwork with { RecursiveTree = _artwork.RecursiveTree with { StrokeWidth = value } });
     }
 
     public string GradientStartHex
@@ -487,6 +546,15 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
     }
 
     [RelayCommand]
+    private void SelectGenerator(string? kind)
+    {
+        if (Enum.TryParse<FractalGeneratorKind>(kind, out var parsed) && parsed != _artwork.GeneratorKind)
+        {
+            Mutate(_artwork with { GeneratorKind = parsed });
+        }
+    }
+
+    [RelayCommand]
     private void SetVariationMode(string? mode)
     {
         if (Enum.TryParse<VariationMode>(mode, out var parsed))
@@ -557,11 +625,21 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
     internal void BeginViewportInteraction()
     {
         ThrowIfDisposed();
+        if (!IsJuliaGenerator)
+        {
+            return;
+        }
+
         _viewportInteractionStart ??= _artwork;
     }
 
     internal void PanViewport(double deltaX, double deltaY, double viewportHeight)
     {
+        if (!IsJuliaGenerator)
+        {
+            return;
+        }
+
         var candidate = _artwork with
         {
             Julia = HighPrecisionViewport.Pan(_artwork.Julia, deltaX, deltaY, viewportHeight)
@@ -592,6 +670,11 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         double viewportHeight,
         double wheelDelta)
     {
+        if (!IsJuliaGenerator)
+        {
+            return;
+        }
+
         var candidate = _artwork with
         {
             Julia = HighPrecisionViewport.ZoomAt(
@@ -844,7 +927,9 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
                     Presentation = snapshot.Presentation with { HighQualityPreview = false }
                 })
                 : requestedContext;
-            var precisionLabel = context.NumericPrecision == NumericPrecision.Arbitrary
+            var precisionLabel = snapshot.GeneratorKind == FractalGeneratorKind.RecursiveTree
+                ? "递归路径描边"
+                : context.NumericPrecision == NumericPrecision.Arbitrary
                 ? $"任意精度 {context.EffectivePrecisionDigits}/{context.ConfiguredPrecisionDigits} 位"
                 : "double 快速模式";
             StatusMessage = $"正在渲染 {context.Width}×{context.Height} 交互预览 · {precisionLabel}…";
@@ -919,7 +1004,9 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         var fallback = diagnostics is { PrecisionFallbackPixels: > 0 }
             ? $" · 回退 {diagnostics.PrecisionFallbackPixels} 像素"
             : string.Empty;
-        var precision = context.NumericPrecision == NumericPrecision.Arbitrary
+        var precision = result.Diagnostics?.Kernel == "recursive-tree"
+            ? "递归路径描边"
+            : context.NumericPrecision == NumericPrecision.Arbitrary
             ? $"任意精度 {context.EffectivePrecisionDigits}/{context.ConfiguredPrecisionDigits} 位"
             : "double 快速模式";
         StatusMessage = $"预览完成 · {precision}{fallback} · renderer v{context.RendererVersion} · {LastPreviewFingerprint}";
@@ -932,6 +1019,9 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         OnPropertyChanged(nameof(CanvasHeight));
         OnPropertyChanged(nameof(BackgroundHex));
         OnPropertyChanged(nameof(Seed));
+        OnPropertyChanged(nameof(IsJuliaGenerator));
+        OnPropertyChanged(nameof(IsRecursiveTreeGenerator));
+        OnPropertyChanged(nameof(GeneratorKindName));
         OnPropertyChanged(nameof(CenterX));
         OnPropertyChanged(nameof(CenterY));
         OnPropertyChanged(nameof(Scale));
@@ -943,6 +1033,13 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         OnPropertyChanged(nameof(Curl));
         OnPropertyChanged(nameof(ForceHighPrecision));
         OnPropertyChanged(nameof(PrecisionDigits));
+        OnPropertyChanged(nameof(TreeDepth));
+        OnPropertyChanged(nameof(TreeBranches));
+        OnPropertyChanged(nameof(TreeBranchAngle));
+        OnPropertyChanged(nameof(TreeLengthDecay));
+        OnPropertyChanged(nameof(TreeRandomness));
+        OnPropertyChanged(nameof(TreeTrunkLength));
+        OnPropertyChanged(nameof(TreeStrokeWidth));
         OnPropertyChanged(nameof(GradientStartHex));
         OnPropertyChanged(nameof(GradientEndHex));
         OnPropertyChanged(nameof(HighQualityPreview));

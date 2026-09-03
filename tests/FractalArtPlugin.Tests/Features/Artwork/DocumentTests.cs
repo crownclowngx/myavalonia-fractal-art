@@ -243,6 +243,50 @@ public sealed class DocumentTests
         Assert.Contains("保持不变", document.StatusMessage, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task 递归树与Julia共用Document历史保存变体和导出编排状态()
+    {
+        using var firstFixture = new DocumentFixture();
+        using var restoredFixture = new DocumentFixture();
+        var document = firstFixture.CreateDocument();
+        await document.InitializeAsync(new NewDocumentActivation("路径作品"), CancellationToken.None);
+
+        document.ApplyArtworkPresetCommand.Execute("verdant-growth");
+        document.TreeDepth = 8;
+        document.TreeBranches = 3;
+        document.TreeBranchAngle = 30;
+        document.TreeLengthDecay = 0.64;
+        document.TreeRandomness = 0.25;
+        document.TreeStrokeWidth = 6;
+        var treeBeforePan = document.Artwork.RecursiveTree;
+        document.PanViewport(50, 40, 600);
+        await document.GenerateVariationsCommand.ExecuteAsync(null);
+
+        Assert.True(document.IsRecursiveTreeGenerator);
+        Assert.False(document.IsJuliaGenerator);
+        Assert.Equal(treeBeforePan, document.Artwork.RecursiveTree);
+        Assert.Equal(9, document.VariationCandidates.Count);
+        Assert.All(document.Artwork.Exploration.Candidates, candidate =>
+            Assert.Equal(FractalGeneratorKind.RecursiveTree, candidate.Recipe.GeneratorKind));
+
+        var snapshot = await document.CaptureSaveSnapshotAsync(CancellationToken.None);
+        var restored = restoredFixture.CreateDocument();
+        await restored.InitializeAsync(
+            new RestoreDocumentActivation("路径作品恢复", snapshot.Content),
+            CancellationToken.None);
+
+        Assert.Equal(document.Artwork.GeneratorKind, restored.Artwork.GeneratorKind);
+        Assert.Equal(document.Artwork.RecursiveTree, restored.Artwork.RecursiveTree);
+        Assert.Equal(document.Artwork.Julia, restored.Artwork.Julia);
+        Assert.Equal(document.Artwork.Gradient, restored.Artwork.Gradient);
+        Assert.Equal(document.Artwork.Exploration.Generation, restored.Artwork.Exploration.Generation);
+        Assert.Equal(document.Artwork.Exploration.Candidates, restored.Artwork.Exploration.Candidates);
+        Assert.True(restored.IsRecursiveTreeGenerator);
+        Assert.False(restored.IsDirty);
+        restored.UndoCommand.Execute(null);
+        Assert.False(restored.CanRedo); // 恢复不会伪造当前进程的编辑历史。
+    }
+
     private static async Task WaitUntilAsync(Func<bool> predicate)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));

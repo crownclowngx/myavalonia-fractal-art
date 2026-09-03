@@ -30,6 +30,7 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
             artwork.FormatVersion,
             artwork.Seed,
             new CanvasDto(artwork.Canvas.Width, artwork.Canvas.Height, artwork.Canvas.Background.ToHex()),
+            (int)artwork.GeneratorKind,
             new JuliaDto(
                 artwork.Julia.CenterX,
                 artwork.Julia.CenterY,
@@ -39,6 +40,7 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
                 artwork.Julia.MaxIterations,
                 artwork.Julia.ForceHighPrecision,
                 artwork.Julia.PrecisionDigits),
+            EncodeRecursiveTree(artwork.RecursiveTree),
             new GradientDto(
                 artwork.Gradient.Start.ToHex(),
                 artwork.Gradient.End.ToHex(),
@@ -69,12 +71,21 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
         {
             1 => DecodeVersion1(content.Payload),
             2 => DecodeVersion2(content.Payload),
-            ArtworkDefinition.CurrentFormatVersion => DecodeVersion3(content.Payload),
+            3 => DecodeVersion3(content.Payload),
+            ArtworkDefinition.CurrentFormatVersion => DecodeVersion4(content.Payload),
             _ => throw new NotSupportedException($"不支持作品格式版本 {formatVersion}。")
         };
     }
 
-    private ArtworkDefinition DecodeVersion3(JsonElement payload)
+    private ArtworkDefinition DecodeVersion4(JsonElement payload) => DecodeVersionedSnapshot(payload, false);
+
+    /// <summary>
+    /// G0004 的 v3 文件只有 Julia 配方。迁移明确选择 Julia，并为尚未使用的递归树补入安全默认值；
+    /// 候选和收藏也按相同规则升级，保证旧九宫格恢复后仍指向原来的 Julia 画面。
+    /// </summary>
+    private ArtworkDefinition DecodeVersion3(JsonElement payload) => DecodeVersionedSnapshot(payload, true);
+
+    private ArtworkDefinition DecodeVersionedSnapshot(JsonElement payload, bool isVersion3)
     {
         SnapshotDto? dto;
         try
@@ -94,12 +105,14 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
 
         var canvas = dto.Canvas;
         var julia = dto.Julia;
+        var recursiveTree = isVersion3 ? null : dto.RecursiveTree;
         var gradient = dto.Gradient;
         var presentation = dto.Presentation;
         if (canvas.Width is null || canvas.Height is null || string.IsNullOrWhiteSpace(julia.CenterX) ||
             string.IsNullOrWhiteSpace(julia.CenterY) || string.IsNullOrWhiteSpace(julia.Scale) ||
             string.IsNullOrWhiteSpace(julia.ConstantReal) || string.IsNullOrWhiteSpace(julia.ConstantImaginary) ||
             julia.MaxIterations is null || julia.ForceHighPrecision is null || julia.PrecisionDigits is null ||
+            (!isVersion3 && (dto.GeneratorKind is null || recursiveTree is null || !HasAllFields(recursiveTree))) ||
             presentation.HighQualityPreview is null ||
             !RgbaColor.TryParse(canvas.Background, out var background) ||
             !RgbaColor.TryParse(gradient.Start, out var start) ||
@@ -111,9 +124,10 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
         }
 
         var artwork = new ArtworkDefinition(
-            dto.FormatVersion.Value,
+            ArtworkDefinition.CurrentFormatVersion,
             dto.Seed.Value,
             new CanvasDefinition(canvas.Width.Value, canvas.Height.Value, background),
+            isVersion3 ? FractalGeneratorKind.Julia : (FractalGeneratorKind)dto.GeneratorKind!.Value,
             new JuliaDefinition(
                 julia.CenterX,
                 julia.CenterY,
@@ -123,11 +137,12 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
                 julia.MaxIterations.Value,
                 julia.ForceHighPrecision.Value,
                 julia.PrecisionDigits.Value),
+            isVersion3 ? ArtworkDefinition.CreateDefault().RecursiveTree : DecodeRecursiveTree(recursiveTree!),
             new GradientDefinition(start, end, interior),
             new ArtworkPresentationDefinition(
                 presentation.SelectedSection,
                 presentation.HighQualityPreview.Value),
-            DecodeExploration(dto.Exploration));
+            DecodeExploration(dto.Exploration, isVersion3));
         validator.Validate(artwork);
         return artwork;
     }
@@ -177,9 +192,11 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
             2,
             dto.Seed.Value,
             new CanvasDefinition(dto.Canvas.Width.Value, dto.Canvas.Height.Value, background),
+            FractalGeneratorKind.Julia,
             new JuliaDefinition(dto.Julia.CenterX, dto.Julia.CenterY, dto.Julia.Scale,
                 dto.Julia.ConstantReal, dto.Julia.ConstantImaginary, dto.Julia.MaxIterations.Value,
                 dto.Julia.ForceHighPrecision.Value, dto.Julia.PrecisionDigits.Value),
+            ArtworkDefinition.CreateDefault().RecursiveTree,
             new GradientDefinition(start, end, interior),
             new ArtworkPresentationDefinition(dto.Presentation.SelectedSection, dto.Presentation.HighQualityPreview.Value),
             ArtworkExplorationDefinition.CreateDefault());
@@ -218,6 +235,7 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
             ArtworkDefinition.CurrentFormatVersion,
             dto.Seed.Value,
             new CanvasDefinition(dto.Canvas.Width.Value, dto.Canvas.Height.Value, background),
+            FractalGeneratorKind.Julia,
             new JuliaDefinition(
                 FormatDouble(dto.Julia.CenterX.Value),
                 FormatDouble(dto.Julia.CenterY.Value),
@@ -227,6 +245,7 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
                 dto.Julia.MaxIterations.Value,
                 false,
                 96),
+            ArtworkDefinition.CreateDefault().RecursiveTree,
             new GradientDefinition(start, end, interior),
             new ArtworkPresentationDefinition(
                 dto.Presentation.SelectedSection,
@@ -242,7 +261,9 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
         int? FormatVersion,
         long? Seed,
         CanvasDto? Canvas,
+        int? GeneratorKind,
         JuliaDto? Julia,
+        RecursiveTreeDto? RecursiveTree,
         GradientDto? Gradient,
         PresentationDto? Presentation,
         ExplorationDto? Exploration);
@@ -257,6 +278,14 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
         int? MaxIterations,
         bool? ForceHighPrecision,
         int? PrecisionDigits);
+    private sealed record RecursiveTreeDto(
+        int? Depth,
+        int? Branches,
+        double? BranchAngleDegrees,
+        double? LengthDecay,
+        double? Randomness,
+        double? TrunkLength,
+        double? StrokeWidth);
     private sealed record GradientDto(string? Start, string? End, string? Interior);
     private sealed record PresentationDto(string? SelectedSection, bool? HighQualityPreview);
     private sealed record ExplorationDto(
@@ -268,7 +297,12 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
         FavoriteVariationDto?[]? Favorites);
     private sealed record VariationCandidateDto(string? Id, int? Number, VariationRecipeDto? Recipe);
     private sealed record FavoriteVariationDto(string? Id, string? Name, VariationRecipeDto? Recipe);
-    private sealed record VariationRecipeDto(long? Seed, JuliaDto? Julia, GradientDto? Gradient);
+    private sealed record VariationRecipeDto(
+        long? Seed,
+        int? GeneratorKind,
+        JuliaDto? Julia,
+        RecursiveTreeDto? RecursiveTree,
+        GradientDto? Gradient);
 
     private sealed record LegacySnapshotDto(
         int? FormatVersion,
@@ -302,12 +336,14 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
 
     private static VariationRecipeDto EncodeRecipe(VariationRecipeDefinition recipe) => new(
         recipe.Seed,
+        (int)recipe.GeneratorKind,
         new JuliaDto(recipe.Julia.CenterX, recipe.Julia.CenterY, recipe.Julia.Scale,
             recipe.Julia.ConstantReal, recipe.Julia.ConstantImaginary, recipe.Julia.MaxIterations,
             recipe.Julia.ForceHighPrecision, recipe.Julia.PrecisionDigits),
+        EncodeRecursiveTree(recipe.RecursiveTree),
         new GradientDto(recipe.Gradient.Start.ToHex(), recipe.Gradient.End.ToHex(), recipe.Gradient.Interior.ToHex()));
 
-    private static ArtworkExplorationDefinition DecodeExploration(ExplorationDto dto)
+    private static ArtworkExplorationDefinition DecodeExploration(ExplorationDto dto, bool isVersion3)
     {
         if (dto.MutationStrength is null || dto.Locks is null || dto.Mode is null || dto.Generation is null ||
             dto.Candidates is null || dto.Favorites is null)
@@ -322,7 +358,7 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
                 throw new InvalidDataException("变体候选包含缺失字段。");
             }
 
-            return new VariationCandidateDefinition(candidate.Id, candidate.Number.Value, DecodeRecipe(candidate.Recipe));
+            return new VariationCandidateDefinition(candidate.Id, candidate.Number.Value, DecodeRecipe(candidate.Recipe, isVersion3));
         }).ToArray();
         var favorites = dto.Favorites.Select(favorite =>
         {
@@ -331,7 +367,7 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
                 throw new InvalidDataException("收藏变体包含缺失字段。");
             }
 
-            return new FavoriteVariationDefinition(favorite.Id, favorite.Name, DecodeRecipe(favorite.Recipe));
+            return new FavoriteVariationDefinition(favorite.Id, favorite.Name, DecodeRecipe(favorite.Recipe, isVersion3));
         }).ToArray();
 
         return new ArtworkExplorationDefinition(
@@ -343,13 +379,14 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
             favorites);
     }
 
-    private static VariationRecipeDefinition DecodeRecipe(VariationRecipeDto dto)
+    private static VariationRecipeDefinition DecodeRecipe(VariationRecipeDto dto, bool isVersion3)
     {
         if (dto.Seed is null || dto.Julia is null || dto.Gradient is null ||
             string.IsNullOrWhiteSpace(dto.Julia.CenterX) || string.IsNullOrWhiteSpace(dto.Julia.CenterY) ||
             string.IsNullOrWhiteSpace(dto.Julia.Scale) || string.IsNullOrWhiteSpace(dto.Julia.ConstantReal) ||
             string.IsNullOrWhiteSpace(dto.Julia.ConstantImaginary) || dto.Julia.MaxIterations is null ||
             dto.Julia.ForceHighPrecision is null || dto.Julia.PrecisionDigits is null ||
+            (!isVersion3 && (dto.GeneratorKind is null || dto.RecursiveTree is null || !HasAllFields(dto.RecursiveTree))) ||
             !RgbaColor.TryParse(dto.Gradient.Start, out var start) ||
             !RgbaColor.TryParse(dto.Gradient.End, out var end) ||
             !RgbaColor.TryParse(dto.Gradient.Interior, out var interior))
@@ -359,9 +396,34 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
 
         return new VariationRecipeDefinition(
             dto.Seed.Value,
+            isVersion3 ? FractalGeneratorKind.Julia : (FractalGeneratorKind)dto.GeneratorKind!.Value,
             new JuliaDefinition(dto.Julia.CenterX, dto.Julia.CenterY, dto.Julia.Scale,
                 dto.Julia.ConstantReal, dto.Julia.ConstantImaginary, dto.Julia.MaxIterations.Value,
                 dto.Julia.ForceHighPrecision.Value, dto.Julia.PrecisionDigits.Value),
+            isVersion3 ? ArtworkDefinition.CreateDefault().RecursiveTree : DecodeRecursiveTree(dto.RecursiveTree!),
             new GradientDefinition(start, end, interior));
     }
+
+    private static RecursiveTreeDto EncodeRecursiveTree(RecursiveTreeDefinition tree) => new(
+        tree.Depth,
+        tree.Branches,
+        tree.BranchAngleDegrees,
+        tree.LengthDecay,
+        tree.Randomness,
+        tree.TrunkLength,
+        tree.StrokeWidth);
+
+    private static bool HasAllFields(RecursiveTreeDto tree) =>
+        tree.Depth is not null && tree.Branches is not null && tree.BranchAngleDegrees is not null &&
+        tree.LengthDecay is not null && tree.Randomness is not null && tree.TrunkLength is not null &&
+        tree.StrokeWidth is not null;
+
+    private static RecursiveTreeDefinition DecodeRecursiveTree(RecursiveTreeDto tree) => new(
+        tree.Depth!.Value,
+        tree.Branches!.Value,
+        tree.BranchAngleDegrees!.Value,
+        tree.LengthDecay!.Value,
+        tree.Randomness!.Value,
+        tree.TrunkLength!.Value,
+        tree.StrokeWidth!.Value);
 }

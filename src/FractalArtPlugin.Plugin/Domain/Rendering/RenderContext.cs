@@ -52,10 +52,12 @@ public sealed record RenderContext(
     private static RenderContext Create(ArtworkDefinition artwork, RenderQuality quality)
     {
         ArgumentNullException.ThrowIfNull(artwork);
-        var numericPrecision = ResolveNumericPrecision(artwork.Julia);
+        var numericPrecision = artwork.GeneratorKind == FractalGeneratorKind.Julia
+            ? ResolveNumericPrecision(artwork.Julia)
+            : NumericPrecision.Double;
         var maximum = quality == RenderQuality.Final
             ? Math.Max(artwork.Canvas.Width, artwork.Canvas.Height)
-            : numericPrecision == NumericPrecision.Arbitrary
+            : artwork.GeneratorKind == FractalGeneratorKind.Julia && numericPrecision == NumericPrecision.Arbitrary
                 ? ResolveArbitraryPreviewBudget(artwork.Julia.PrecisionDigits, artwork.Presentation.HighQualityPreview)
                 : artwork.Presentation.HighQualityPreview ? 960 : 480;
         var ratio = quality == RenderQuality.Final
@@ -63,7 +65,7 @@ public sealed record RenderContext(
             : Math.Min(1d, Math.Min((double)maximum / artwork.Canvas.Width, (double)maximum / artwork.Canvas.Height));
         var width = Math.Max(1, (int)Math.Round(artwork.Canvas.Width * ratio));
         var height = Math.Max(1, (int)Math.Round(artwork.Canvas.Height * ratio));
-        var descriptor = numericPrecision == NumericPrecision.Arbitrary
+        var descriptor = artwork.GeneratorKind == FractalGeneratorKind.Julia && numericPrecision == NumericPrecision.Arbitrary
             ? PrecisionPolicy.Default.Describe(artwork.Julia, height)
             : new PrecisionDescriptor(
                 artwork.Julia.PrecisionDigits,

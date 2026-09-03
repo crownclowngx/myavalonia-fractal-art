@@ -106,6 +106,55 @@ public sealed class VariationTests
     }
 
     [Fact]
+    public void 递归树变体覆盖路径参数且始终保持当前生成器与资源预算()
+    {
+        var generator = new VariationGenerator(_validator);
+        var source = ArtworkDefinition.CreateDefault() with
+        {
+            GeneratorKind = FractalGeneratorKind.RecursiveTree,
+            Exploration = ArtworkDefinition.CreateDefault().Exploration with { MutationStrength = 1 }
+        };
+
+        var first = generator.Generate(source, 9);
+        var repeated = generator.Generate(source, 9);
+
+        Assert.Equal(first.Candidates, repeated.Candidates);
+        Assert.All(first.Candidates, candidate =>
+        {
+            Assert.Equal(FractalGeneratorKind.RecursiveTree, candidate.Recipe.GeneratorKind);
+            Assert.Equal(source.Julia, candidate.Recipe.Julia);
+            _validator.Validate(source.ApplyVariationRecipe(candidate.Recipe));
+        });
+        Assert.Contains(first.Candidates, candidate => candidate.Recipe.RecursiveTree != source.RecursiveTree);
+        Assert.Contains(generator.Parameters, parameter => parameter.Id == "tree.depth");
+        Assert.Contains(generator.Parameters, parameter => parameter.Id == "tree.branches");
+        Assert.Contains(generator.Parameters, parameter => parameter.Id == "tree.angle");
+        Assert.Contains(generator.Parameters, parameter => parameter.Id == "tree.lengthDecay");
+        Assert.Contains(generator.Parameters, parameter => parameter.Id == "tree.randomness");
+    }
+
+    [Fact]
+    public void 递归树只改变质感时路径配方保持不变()
+    {
+        var generator = new VariationGenerator(_validator);
+        var source = ArtworkDefinition.CreateDefault() with
+        {
+            GeneratorKind = FractalGeneratorKind.RecursiveTree,
+            Exploration = ArtworkDefinition.CreateDefault().Exploration with
+            {
+                Mode = VariationMode.TextureOnly,
+                Locks = VariationLockGroups.Seed
+            }
+        };
+
+        var batch = generator.Generate(source, 9);
+
+        Assert.All(batch.Candidates, candidate =>
+            Assert.Equal(source.RecursiveTree, candidate.Recipe.RecursiveTree));
+        Assert.Contains(batch.Candidates, candidate => candidate.Recipe.Gradient != source.Gradient);
+    }
+
+    [Fact]
     public async Task 候选缩略图并发不超过三且重复批次全部命中缓存()
     {
         var pipeline = new MeasuringPipeline();

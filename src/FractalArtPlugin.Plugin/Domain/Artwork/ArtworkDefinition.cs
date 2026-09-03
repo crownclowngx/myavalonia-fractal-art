@@ -47,6 +47,28 @@ public sealed record JuliaDefinition(
     bool ForceHighPrecision,
     int PrecisionDigits);
 
+/// <summary>
+/// 作品当前使用的生成器类型。枚举值会进入持久化文件，因此只能追加，不能重排或复用已有数值。
+/// </summary>
+public enum FractalGeneratorKind
+{
+    Julia = 0,
+    RecursiveTree = 1
+}
+
+/// <summary>
+/// 递归树的矢量配方。坐标和长度采用归一化画布语义，生成阶段只产生线段，不接触像素缓冲区。
+/// 深度、分叉数和线段总量由统一验证器共同约束，避免参数组合造成指数级资源失控。
+/// </summary>
+public sealed record RecursiveTreeDefinition(
+    int Depth,
+    int Branches,
+    double BranchAngleDegrees,
+    double LengthDecay,
+    double Randomness,
+    double TrunkLength,
+    double StrokeWidth);
+
 public sealed record GradientDefinition(RgbaColor Start, RgbaColor End, RgbaColor Interior);
 public sealed record ArtworkPresentationDefinition(string SelectedSection, bool HighQualityPreview);
 
@@ -56,7 +78,9 @@ public sealed record ArtworkPresentationDefinition(string SelectedSection, bool 
 /// </summary>
 public sealed record VariationRecipeDefinition(
     long Seed,
+    FractalGeneratorKind GeneratorKind,
     JuliaDefinition Julia,
+    RecursiveTreeDefinition RecursiveTree,
     GradientDefinition Gradient);
 
 public sealed record VariationCandidateDefinition(
@@ -109,24 +133,29 @@ public sealed record ArtworkDefinition(
     int FormatVersion,
     long Seed,
     CanvasDefinition Canvas,
+    FractalGeneratorKind GeneratorKind,
     JuliaDefinition Julia,
+    RecursiveTreeDefinition RecursiveTree,
     GradientDefinition Gradient,
     ArtworkPresentationDefinition Presentation,
     ArtworkExplorationDefinition Exploration)
 {
-    public const int CurrentFormatVersion = 3;
+    public const int CurrentFormatVersion = 4;
 
     public static ArtworkDefinition CreateDefault() => new(
         CurrentFormatVersion,
         20260903,
         new CanvasDefinition(1200, 800, new RgbaColor(10, 14, 28)),
+        FractalGeneratorKind.Julia,
         new JuliaDefinition("0", "0", "3.2", "-0.745", "0.113", 320, false, 96),
+        new RecursiveTreeDefinition(9, 2, 27, 0.72, 0.12, 0.28, 3.2),
         new GradientDefinition(new RgbaColor(20, 31, 74), new RgbaColor(248, 167, 63), new RgbaColor(3, 5, 12)),
         new ArtworkPresentationDefinition("生成", false),
         ArtworkExplorationDefinition.CreateDefault());
 
     /// <summary>从当前作品提取能够独立重放画面的最小配方。</summary>
-    public VariationRecipeDefinition ToVariationRecipe() => new(Seed, Julia, Gradient);
+    public VariationRecipeDefinition ToVariationRecipe() =>
+        new(Seed, GeneratorKind, Julia, RecursiveTree, Gradient);
 
     /// <summary>
     /// 把候选配方应用到当前作品；画布、探索收藏和 UI 呈现由当前 Document 保留，避免“采用候选”意外改掉工作区。
@@ -134,7 +163,9 @@ public sealed record ArtworkDefinition(
     public ArtworkDefinition ApplyVariationRecipe(VariationRecipeDefinition recipe) => this with
     {
         Seed = recipe.Seed,
+        GeneratorKind = recipe.GeneratorKind,
         Julia = recipe.Julia,
+        RecursiveTree = recipe.RecursiveTree,
         Gradient = recipe.Gradient
     };
 }

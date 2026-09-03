@@ -19,7 +19,7 @@
 3. 可选声明 Workbench Command 及其菜单位置，但不保存 Document 实例或执行回调；
 4. 把 Model 与 View 的对应关系交给 Host。
 
-G0001–G0004 当前只登记一个 `FractalArtworkDocument`，Tool、Workbench Command、菜单贡献和默认快捷键数量
+G0001–G0005 当前只登记一个 `FractalArtworkDocument`，Tool、Workbench Command、菜单贡献和默认快捷键数量
 均为零。Standalone 使用独立 Scope 构造真实 Document，并通过 SDK 的窗口交互端口提供 PNG 保存位置选择。
 
 Host 读取构建生成的 `plugin.manifest.json`，检查 Plugin SDK 兼容区间，加载唯一的 `IPluginModule`，再按

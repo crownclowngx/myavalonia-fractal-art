@@ -15,6 +15,10 @@ public static class FractalArtPluginServices
         services.AddSingleton<IArtworkSnapshotCodec, ArtworkSnapshotCodec>();
         services.AddSingleton<IJuliaFieldGenerator, JuliaFieldGenerator>();
         services.AddSingleton<IGradientMapper, LinearGradientMapper>();
+        services.AddSingleton<IRecursiveTreePathGenerator, RecursiveTreePathGenerator>();
+        services.AddSingleton<IPathStrokeRenderer, PathStrokeRenderer>();
+        services.AddSingleton<IArtworkGeneratorRenderer, JuliaArtworkRenderer>();
+        services.AddSingleton<IArtworkGeneratorRenderer, RecursiveTreeArtworkRenderer>();
         services.AddSingleton<IArtworkRenderPipeline, ArtworkRenderPipeline>();
         services.AddSingleton<IArtisticParameterMapper, ArtisticParameterMapper>();
         services.AddSingleton<IVariationGenerator, VariationGenerator>();

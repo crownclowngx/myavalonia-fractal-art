@@ -10,9 +10,11 @@ public interface IArtworkRenderPipeline
 
 internal sealed class ArtworkRenderPipeline(
     IArtworkValidator validator,
-    IJuliaFieldGenerator generator,
-    IGradientMapper gradientMapper) : IArtworkRenderPipeline
+    IEnumerable<IArtworkGeneratorRenderer> renderers) : IArtworkRenderPipeline
 {
+    private readonly IReadOnlyDictionary<FractalGeneratorKind, IArtworkGeneratorRenderer> _renderers =
+        CreateRendererMap(renderers);
+
     public async Task<RgbaImage> RenderAsync(
         ArtworkDefinition artwork,
         RenderContext context,
@@ -20,8 +22,26 @@ internal sealed class ArtworkRenderPipeline(
     {
         validator.Validate(artwork);
         cancellationToken.ThrowIfCancellationRequested();
-        var field = await generator.GenerateAsync(artwork.Julia, context, cancellationToken).ConfigureAwait(false);
-        return gradientMapper.Map(field, artwork.Gradient, cancellationToken);
+        if (!_renderers.TryGetValue(artwork.GeneratorKind, out var renderer))
+        {
+            throw new NotSupportedException($"没有登记生成器 {artwork.GeneratorKind} 的渲染策略。");
+        }
+
+        return await renderer.RenderAsync(artwork, context, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static IReadOnlyDictionary<FractalGeneratorKind, IArtworkGeneratorRenderer> CreateRendererMap(
+        IEnumerable<IArtworkGeneratorRenderer> renderers)
+    {
+        ArgumentNullException.ThrowIfNull(renderers);
+        try
+        {
+            return renderers.ToDictionary(renderer => renderer.Kind);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new InvalidOperationException("每种生成器必须且只能登记一个渲染策略。", exception);
+        }
     }
 }
 

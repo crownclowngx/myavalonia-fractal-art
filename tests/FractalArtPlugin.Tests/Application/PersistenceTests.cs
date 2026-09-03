@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using FractalArtPlugin.Application;
 using MyAvaloniaManagement.PluginSdk;
 using Xunit;
@@ -16,7 +17,9 @@ public sealed class PersistenceTests
         {
             Seed = 987654321,
             Canvas = new CanvasDefinition(2048, 1536, new RgbaColor(1, 2, 3, 4)),
+            GeneratorKind = FractalGeneratorKind.RecursiveTree,
             Julia = new JuliaDefinition("-0.12", "0.34", "1.5e-80", "-0.8", "0.156", 777, true, 128),
+            RecursiveTree = new RecursiveTreeDefinition(8, 3, 32, 0.66, 0.2, 0.24, 5.5),
             Gradient = new GradientDefinition(
                 new RgbaColor(10, 20, 30),
                 new RgbaColor(200, 210, 220),
@@ -44,7 +47,7 @@ public sealed class PersistenceTests
     public void 未知作品格式版本被明确拒绝且不会静默迁移()
     {
         var valid = _codec.Encode(ArtworkDefinition.CreateDefault());
-        var json = valid.Payload.GetRawText().Replace("\"formatVersion\":3", "\"formatVersion\":99", StringComparison.Ordinal);
+        var json = valid.Payload.GetRawText().Replace("\"formatVersion\":4", "\"formatVersion\":99", StringComparison.Ordinal);
         using var payload = JsonDocument.Parse(json);
         var content = new DocumentContent(ArtworkSnapshotCodec.ContentSchemaVersion, payload.RootElement);
 
@@ -68,6 +71,26 @@ public sealed class PersistenceTests
         var exception = Assert.Throws<InvalidDataException>(() => _codec.Decode(content));
 
         Assert.Contains("缺少", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void V4缺失路径字段或使用未知生成器时不会静默采用默认值()
+    {
+        var encoded = _codec.Encode(ArtworkDefinition.CreateDefault());
+        var missingTree = JsonNode.Parse(encoded.Payload.GetRawText())!.AsObject();
+        missingTree.Remove("recursiveTree");
+        var missingContent = new DocumentContent(
+            ArtworkSnapshotCodec.ContentSchemaVersion,
+            JsonSerializer.SerializeToElement(missingTree));
+
+        Assert.Throws<InvalidDataException>(() => _codec.Decode(missingContent));
+
+        var unknownGenerator = JsonNode.Parse(encoded.Payload.GetRawText())!.AsObject();
+        unknownGenerator["generatorKind"] = 99;
+        var unknownContent = new DocumentContent(
+            ArtworkSnapshotCodec.ContentSchemaVersion,
+            JsonSerializer.SerializeToElement(unknownGenerator));
+        Assert.Throws<InvalidDataException>(() => _codec.Decode(unknownContent));
     }
 
     [Fact]
@@ -127,7 +150,7 @@ public sealed class PersistenceTests
     }
 
     [Fact]
-    public void V3快照保存探索配方但不保存运行态缩略图或渲染诊断()
+    public void V4快照保存生成器路径与探索配方但不保存运行态对象()
     {
         var content = _codec.Encode(ArtworkDefinition.CreateDefault());
         var json = content.Payload.GetRawText();
@@ -137,7 +160,9 @@ public sealed class PersistenceTests
         Assert.DoesNotContain("kernel", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("transient", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("previewImage", json, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(3, content.Payload.GetProperty("formatVersion").GetInt32());
+        Assert.Equal(4, content.Payload.GetProperty("formatVersion").GetInt32());
+        Assert.True(content.Payload.TryGetProperty("generatorKind", out _));
+        Assert.True(content.Payload.TryGetProperty("recursiveTree", out _));
         Assert.True(content.Payload.TryGetProperty("exploration", out _));
     }
 
@@ -166,12 +191,54 @@ public sealed class PersistenceTests
 
         var migrated = _codec.Decode(new DocumentContent(ArtworkSnapshotCodec.ContentSchemaVersion, payload));
 
-        Assert.Equal(3, migrated.FormatVersion);
+        Assert.Equal(ArtworkDefinition.CurrentFormatVersion, migrated.FormatVersion);
         Assert.Equal(42, migrated.Seed);
         Assert.Equal("-0.8", migrated.Julia.ConstantReal);
         Assert.Empty(migrated.Exploration.Candidates);
         Assert.Empty(migrated.Exploration.Favorites);
         Assert.Equal(0, migrated.Exploration.Generation);
+        Assert.Equal(FractalGeneratorKind.Julia, migrated.GeneratorKind);
+    }
+
+    [Fact]
+    public void V3作品及其候选显式迁移为Julia并补入安全路径默认值()
+    {
+        var source = ArtworkDefinition.CreateDefault();
+        var recipe = source.ToVariationRecipe();
+        source = source with
+        {
+            Exploration = source.Exploration with
+            {
+                Generation = 1,
+                Candidates = Enumerable.Range(1, 9)
+                    .Select(index => new VariationCandidateDefinition($"g000001-c{index:D2}", index, recipe))
+                    .ToArray()
+            }
+        };
+        var root = JsonNode.Parse(_codec.Encode(source).Payload.GetRawText())!.AsObject();
+        root["formatVersion"] = 3;
+        root.Remove("generatorKind");
+        root.Remove("recursiveTree");
+        foreach (var candidate in root["exploration"]!["candidates"]!.AsArray())
+        {
+            var candidateRecipe = candidate!["recipe"]!.AsObject();
+            candidateRecipe.Remove("generatorKind");
+            candidateRecipe.Remove("recursiveTree");
+        }
+
+        var v3Payload = JsonSerializer.SerializeToElement(root);
+
+        var migrated = _codec.Decode(new DocumentContent(ArtworkSnapshotCodec.ContentSchemaVersion, v3Payload));
+
+        Assert.Equal(ArtworkDefinition.CurrentFormatVersion, migrated.FormatVersion);
+        Assert.Equal(FractalGeneratorKind.Julia, migrated.GeneratorKind);
+        Assert.Equal(ArtworkDefinition.CreateDefault().RecursiveTree, migrated.RecursiveTree);
+        Assert.Equal(9, migrated.Exploration.Candidates.Count);
+        Assert.All(migrated.Exploration.Candidates, candidate =>
+        {
+            Assert.Equal(FractalGeneratorKind.Julia, candidate.Recipe.GeneratorKind);
+            Assert.Equal(ArtworkDefinition.CreateDefault().RecursiveTree, candidate.Recipe.RecursiveTree);
+        });
     }
 
     [Fact]

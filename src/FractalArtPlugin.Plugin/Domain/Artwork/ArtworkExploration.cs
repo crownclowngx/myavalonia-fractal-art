@@ -101,6 +101,11 @@ internal sealed class VariationGenerator(IArtworkValidator validator) : IVariati
         new("julia.constantReal", "流动", VariationLockGroups.Shape, -1.9, 1.9, 0, MutationDistribution.Uniform),
         new("julia.constantImaginary", "卷曲", VariationLockGroups.Shape, -1.9, 1.9, 0, MutationDistribution.Uniform),
         new("julia.maxIterations", "细节", VariationLockGroups.Shape, 16, 4096, 16, MutationDistribution.Discrete),
+        new("tree.depth", "递归层级", VariationLockGroups.Shape, 1, 12, 1, MutationDistribution.Discrete),
+        new("tree.branches", "每级分叉", VariationLockGroups.Shape, 2, 3, 1, MutationDistribution.Discrete),
+        new("tree.angle", "分叉角度", VariationLockGroups.Shape, 5, 85, 0.5, MutationDistribution.Uniform),
+        new("tree.lengthDecay", "长度衰减", VariationLockGroups.Shape, 0.45, 0.85, 0.01, MutationDistribution.Uniform),
+        new("tree.randomness", "随机度", VariationLockGroups.Shape, 0, 1, 0.01, MutationDistribution.Uniform),
         new("gradient.rgb", "调色板", VariationLockGroups.Color, 0, 255, 1, MutationDistribution.Discrete),
         new("seed", "Seed", VariationLockGroups.Seed, long.MinValue, long.MaxValue, 1, MutationDistribution.Discrete)
     ];
@@ -161,6 +166,7 @@ internal sealed class VariationGenerator(IArtworkValidator validator) : IVariati
         var mutateColor = settings.Mode is VariationMode.All or VariationMode.TextureOnly;
         var mutateComposition = settings.Mode == VariationMode.All;
         var julia = source.Julia;
+        var recursiveTree = source.RecursiveTree;
         var gradient = source.Gradient;
         var seed = source.Seed;
 
@@ -169,14 +175,22 @@ internal sealed class VariationGenerator(IArtworkValidator validator) : IVariati
             seed = unchecked((long)random.NextUInt64());
         }
 
-        if (mutateComposition && !locks.HasFlag(VariationLockGroups.Composition))
+        if (source.GeneratorKind == FractalGeneratorKind.Julia &&
+            mutateComposition && !locks.HasFlag(VariationLockGroups.Composition))
         {
             julia = MutateComposition(julia, strength, ref random);
         }
 
         if (mutateShape && !locks.HasFlag(VariationLockGroups.Shape))
         {
-            julia = MutateShape(julia, strength, ref random);
+            if (source.GeneratorKind == FractalGeneratorKind.RecursiveTree)
+            {
+                recursiveTree = MutateRecursiveTree(recursiveTree, strength, ref random);
+            }
+            else
+            {
+                julia = MutateShape(julia, strength, ref random);
+            }
         }
 
         if (mutateColor && !locks.HasFlag(VariationLockGroups.Color))
@@ -184,7 +198,28 @@ internal sealed class VariationGenerator(IArtworkValidator validator) : IVariati
             gradient = MutateGradient(gradient, strength, ref random);
         }
 
-        return new VariationRecipeDefinition(seed, julia, gradient);
+        return new VariationRecipeDefinition(seed, source.GeneratorKind, julia, recursiveTree, gradient);
+    }
+
+    private static RecursiveTreeDefinition MutateRecursiveTree(
+        RecursiveTreeDefinition tree,
+        double strength,
+        ref StableRandom random)
+    {
+        var depthDelta = (int)Math.Round(random.NextSigned() * strength * 3);
+        var shouldSwitchBranches = random.NextSigned() * strength > 0.55;
+        var branches = shouldSwitchBranches
+            ? (tree.Branches == 2 ? 3 : 2)
+            : tree.Branches;
+        return tree with
+        {
+            Depth = Math.Clamp(tree.Depth + depthDelta, 1, 12),
+            Branches = branches,
+            BranchAngleDegrees = Math.Clamp(
+                tree.BranchAngleDegrees + random.NextSigned() * strength * 28, 5, 85),
+            LengthDecay = Math.Clamp(tree.LengthDecay + random.NextSigned() * strength * 0.16, 0.45, 0.85),
+            Randomness = Math.Clamp(tree.Randomness + random.NextSigned() * strength * 0.45, 0, 1)
+        };
     }
 
     private static JuliaDefinition MutateComposition(JuliaDefinition julia, double strength, ref StableRandom random)
@@ -264,7 +299,10 @@ internal sealed class VariationGenerator(IArtworkValidator validator) : IVariati
 public sealed record ArtworkPresetDefinition(
     string Id,
     string Name,
+    string VisualFamily,
+    FractalGeneratorKind GeneratorKind,
     JuliaDefinition Julia,
+    RecursiveTreeDefinition RecursiveTree,
     GradientDefinition Gradient);
 
 public sealed record PalettePresetDefinition(string Id, string Name, GradientDefinition Gradient);
@@ -282,12 +320,26 @@ internal sealed class ArtworkPresetCatalog : IArtworkPresetCatalog
 {
     public IReadOnlyList<ArtworkPresetDefinition> ArtworkPresets { get; } =
     [
-        new("amber-bloom", "暮金花火", new JuliaDefinition("0", "0", "3.2", "-0.745", "0.113", 384, false, 96),
+        new("amber-bloom", "暮金花火", "无限与花朵", FractalGeneratorKind.Julia,
+            new JuliaDefinition("0", "0", "3.2", "-0.745", "0.113", 384, false, 96),
+            new RecursiveTreeDefinition(9, 2, 27, 0.72, 0.12, 0.28, 3.2),
             new GradientDefinition(new(18, 24, 58), new(255, 178, 72), new(2, 4, 12))),
-        new("ocean-velvet", "深海丝绒", new JuliaDefinition("0", "0", "3", "-0.4", "0.6", 448, false, 96),
+        new("ocean-velvet", "深海丝绒", "无限与花朵", FractalGeneratorKind.Julia,
+            new JuliaDefinition("0", "0", "3", "-0.4", "0.6", 448, false, 96),
+            new RecursiveTreeDefinition(9, 2, 27, 0.72, 0.12, 0.28, 3.2),
             new GradientDefinition(new(4, 24, 52), new(42, 220, 210), new(1, 4, 12))),
-        new("neon-coral", "霓虹珊瑚", new JuliaDefinition("0", "0", "3.4", "-0.835", "-0.2321", 512, false, 96),
-            new GradientDefinition(new(46, 12, 84), new(255, 73, 144), new(5, 1, 14)))
+        new("neon-coral", "霓虹珊瑚", "无限与花朵", FractalGeneratorKind.Julia,
+            new JuliaDefinition("0", "0", "3.4", "-0.835", "-0.2321", 512, false, 96),
+            new RecursiveTreeDefinition(9, 2, 27, 0.72, 0.12, 0.28, 3.2),
+            new GradientDefinition(new(46, 12, 84), new(255, 73, 144), new(5, 1, 14))),
+        new("verdant-growth", "翡翠生长", "植物与生长", FractalGeneratorKind.RecursiveTree,
+            new JuliaDefinition("0", "0", "3.2", "-0.745", "0.113", 320, false, 96),
+            new RecursiveTreeDefinition(10, 2, 25, 0.72, 0.1, 0.27, 4.2),
+            new GradientDefinition(new(84, 48, 24), new(111, 238, 137), new(7, 15, 18))),
+        new("winter-branches", "月下银枝", "植物与生长", FractalGeneratorKind.RecursiveTree,
+            new JuliaDefinition("0", "0", "3.2", "-0.745", "0.113", 320, false, 96),
+            new RecursiveTreeDefinition(8, 3, 31, 0.66, 0.18, 0.25, 3.5),
+            new GradientDefinition(new(92, 105, 138), new(225, 242, 255), new(4, 8, 18)))
     ];
 
     public IReadOnlyList<PalettePresetDefinition> PalettePresets { get; } =
@@ -301,7 +353,13 @@ internal sealed class ArtworkPresetCatalog : IArtworkPresetCatalog
     {
         var preset = ArtworkPresets.SingleOrDefault(item => item.Id == id)
             ?? throw new ArgumentException($"未知作品预设：{id}。", nameof(id));
-        return artwork with { Julia = preset.Julia, Gradient = preset.Gradient };
+        return artwork with
+        {
+            GeneratorKind = preset.GeneratorKind,
+            Julia = preset.Julia,
+            RecursiveTree = preset.RecursiveTree,
+            Gradient = preset.Gradient
+        };
     }
 
     public ArtworkDefinition ApplyPalettePreset(ArtworkDefinition artwork, string id)
