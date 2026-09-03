@@ -155,6 +155,51 @@ public sealed class VariationTests
     }
 
     [Fact]
+    public void Mandelbrot变体修改视口与细节但不会制造无意义Seed差异()
+    {
+        var generator = new VariationGenerator(_validator);
+        var source = ArtworkDefinition.CreateDefault() with
+        {
+            GeneratorKind = FractalGeneratorKind.Mandelbrot,
+            Exploration = ArtworkDefinition.CreateDefault().Exploration with { MutationStrength = 1 }
+        };
+
+        var batch = generator.Generate(source, 9);
+
+        Assert.All(batch.Candidates, candidate =>
+        {
+            Assert.Equal(source.Seed, candidate.Recipe.Seed);
+            Assert.Equal(FractalGeneratorKind.Mandelbrot, candidate.Recipe.GeneratorKind);
+            Assert.Equal(source.LSystem, candidate.Recipe.LSystem);
+            _validator.Validate(source.ApplyVariationRecipe(candidate.Recipe));
+        });
+        Assert.Contains(batch.Candidates, candidate => candidate.Recipe.Mandelbrot != source.Mandelbrot);
+    }
+
+    [Fact]
+    public void LSystem变体只扰动绘制参数并锁定用户语法()
+    {
+        var generator = new VariationGenerator(_validator);
+        var source = new ArtworkPresetCatalog().ApplyArtworkPreset(
+            ArtworkDefinition.CreateDefault(),
+            "lsystem-koch") with
+        {
+            Exploration = ArtworkDefinition.CreateDefault().Exploration with { MutationStrength = 1 }
+        };
+
+        var batch = generator.Generate(source, 9);
+
+        Assert.All(batch.Candidates, candidate =>
+        {
+            Assert.Equal(source.Seed, candidate.Recipe.Seed);
+            Assert.Equal(source.LSystem.Axiom, candidate.Recipe.LSystem.Axiom);
+            Assert.Equal(source.LSystem.Rules, candidate.Recipe.LSystem.Rules);
+            _validator.Validate(source.ApplyVariationRecipe(candidate.Recipe));
+        });
+        Assert.Contains(batch.Candidates, candidate => candidate.Recipe.LSystem != source.LSystem);
+    }
+
+    [Fact]
     public async Task 候选缩略图并发不超过三且重复批次全部命中缓存()
     {
         var pipeline = new MeasuringPipeline();

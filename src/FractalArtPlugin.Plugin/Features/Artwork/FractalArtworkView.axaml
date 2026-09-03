@@ -17,17 +17,18 @@
       </Grid>
     </Border>
 
-    <Grid Grid.Row="1" ColumnDefinitions="150,*,330">
+    <Grid Grid.Row="1" ColumnDefinitions="190,*,380">
       <Border Grid.Column="0" Padding="12" Background="#0E1425" BorderBrush="#27304A" BorderThickness="0,0,1,0">
         <StackPanel Spacing="8">
-          <TextBlock Margin="4,0,0,8" FontSize="12" Foreground="#8791AD" Text="创作导航" />
-          <Button HorizontalContentAlignment="Left" Content="生成" />
-          <Button HorizontalContentAlignment="Left" Content="造型（后续阶段）" IsEnabled="False" />
-          <Button HorizontalContentAlignment="Left" Content="图层（后续阶段）" IsEnabled="False" />
-          <Button HorizontalContentAlignment="Left" Content="效果（后续阶段）" IsEnabled="False" />
-          <Button HorizontalContentAlignment="Left" Content="动画（后续阶段）" IsEnabled="False" />
+          <TextBlock Margin="4,0,0,8" FontSize="12" Foreground="#8791AD" Text="生成方式" />
+          <TextBlock Margin="4,4" FontWeight="SemiBold" Foreground="#D4DAED" Text="时间逃逸" />
+          <Button HorizontalContentAlignment="Left" Command="{Binding SelectGeneratorCommand}" CommandParameter="Julia" Content="Julia" />
+          <Button HorizontalContentAlignment="Left" Command="{Binding SelectGeneratorCommand}" CommandParameter="Mandelbrot" Content="Mandelbrot" />
+          <TextBlock Margin="4,12,4,4" FontWeight="SemiBold" Foreground="#D4DAED" Text="L-System" />
+          <Button HorizontalContentAlignment="Left" Command="{Binding SelectGeneratorCommand}" CommandParameter="LSystem" Content="L-System" />
+          <Button HorizontalContentAlignment="Left" Command="{Binding SelectGeneratorCommand}" CommandParameter="RecursiveTree" Content="递归树（兼容）" />
           <Border Margin="0,12,0,0" Padding="10" Background="#182038" CornerRadius="6">
-            <TextBlock Foreground="#AEB8D2" Text="G0005 已加入递归树路径；Julia 标量场与树路径共用作品、变体、保存和 PNG 导出。" TextWrapping="Wrap" />
+            <TextBlock Foreground="#AEB8D2" Text="先选数据形态，再在右侧只编辑当前生成器。经典示例只是起点，所有参数都可继续自定义。" TextWrapping="Wrap" />
           </Border>
         </StackPanel>
       </Border>
@@ -55,110 +56,166 @@
       </Border>
 
       <ScrollViewer Grid.Column="2" Background="#0E1425" BorderBrush="#27304A" BorderThickness="1,0,0,0">
-        <StackPanel Margin="16" Spacing="10">
-          <TextBlock FontSize="16" FontWeight="SemiBold" Foreground="#F2F5FF" Text="作品属性" />
-          <TextBlock Foreground="#8791AD" Text="画布" />
-          <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
-            <NumericUpDown Grid.Column="0" Minimum="64" Maximum="8192" Value="{Binding CanvasWidth}" PlaceholderText="宽度" />
-            <NumericUpDown Grid.Column="1" Minimum="64" Maximum="8192" Value="{Binding CanvasHeight}" PlaceholderText="高度" />
-          </Grid>
-          <TextBox Text="{Binding BackgroundHex}" PlaceholderText="#RRGGBBAA 背景" />
-          <NumericUpDown Minimum="-9223372036854775808" Maximum="9223372036854775807" Value="{Binding Seed}" PlaceholderText="Seed" />
+        <StackPanel Margin="14" Spacing="10">
+          <TextBlock FontSize="16" FontWeight="SemiBold" Foreground="#F2F5FF" Text="{Binding GeneratorKindName}" />
 
-          <Separator Margin="0,6" />
-          <TextBlock Foreground="#8791AD" Text="视觉预设" />
-          <TextBlock Foreground="#BFC7DB" Text="无限与花朵" />
-          <WrapPanel Orientation="Horizontal">
-            <Button Margin="0,0,6,6" Command="{Binding ApplyArtworkPresetCommand}" CommandParameter="amber-bloom" Content="暮金花火" />
-            <Button Margin="0,0,6,6" Command="{Binding ApplyArtworkPresetCommand}" CommandParameter="ocean-velvet" Content="深海丝绒" />
-            <Button Margin="0,0,6,6" Command="{Binding ApplyArtworkPresetCommand}" CommandParameter="neon-coral" Content="霓虹珊瑚" />
-          </WrapPanel>
-          <TextBlock Foreground="#BFC7DB" Text="植物与生长" />
-          <WrapPanel Orientation="Horizontal">
-            <Button Margin="0,0,6,6" Command="{Binding ApplyArtworkPresetCommand}" CommandParameter="verdant-growth" Content="翡翠生长" />
-            <Button Margin="0,0,6,6" Command="{Binding ApplyArtworkPresetCommand}" CommandParameter="winter-branches" Content="月下银枝" />
-          </WrapPanel>
-          <TextBlock Foreground="#D4DAED" Text="{Binding GeneratorKindName, StringFormat='当前生成器：{0}'}" />
-          <WrapPanel Orientation="Horizontal">
-            <Button Margin="0,0,6,6" Command="{Binding SelectGeneratorCommand}" CommandParameter="Julia" Content="Julia" />
-            <Button Margin="0,0,6,6" Command="{Binding SelectGeneratorCommand}" CommandParameter="RecursiveTree" Content="递归树" />
-          </WrapPanel>
+          <Expander Header="画布与渲染" IsExpanded="False">
+            <StackPanel Margin="0,8,0,0" Spacing="7">
+              <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                <NumericUpDown Grid.Column="0" Minimum="64" Maximum="8192" Value="{Binding CanvasWidth}" PlaceholderText="宽度" />
+                <NumericUpDown Grid.Column="1" Minimum="64" Maximum="8192" Value="{Binding CanvasHeight}" PlaceholderText="高度" />
+              </Grid>
+              <TextBox Text="{Binding BackgroundHex}" PlaceholderText="#RRGGBBAA 背景" />
+              <NumericUpDown IsVisible="{Binding IsSeedControlVisible}" Minimum="-9223372036854775808" Maximum="9223372036854775807" Value="{Binding Seed}" PlaceholderText="Seed" />
+            </StackPanel>
+          </Expander>
 
-          <StackPanel Spacing="6" IsVisible="{Binding IsJuliaGenerator}">
-            <TextBlock Foreground="#8791AD" Text="艺术化参数（0–100）" />
-            <TextBlock Foreground="#BFC7DB" Text="细节" />
-            <Slider Minimum="0" Maximum="100" TickFrequency="1" Value="{Binding Detail}" />
-            <TextBlock Foreground="#BFC7DB" Text="流动" />
-            <Slider Minimum="0" Maximum="100" TickFrequency="1" Value="{Binding Flow}" />
-            <TextBlock Foreground="#BFC7DB" Text="卷曲" />
-            <Slider Minimum="0" Maximum="100" TickFrequency="1" Value="{Binding Curl}" />
-            <TextBlock Foreground="#8791AD" Text="艺术滑杆直接映射下方真实 Julia 参数，不保存第二份状态。" TextWrapping="Wrap" />
-          </StackPanel>
+          <TabControl IsVisible="{Binding IsEscapeTimeFamily}">
+            <TabItem Header="示例">
+              <StackPanel Margin="8" Spacing="8">
+                <StackPanel IsVisible="{Binding IsJuliaGenerator}" Spacing="6">
+                  <TextBlock Foreground="#8791AD" Text="Julia 经典起点" />
+                  <WrapPanel>
+                    <Button Margin="0,0,6,6" Command="{Binding ApplyArtworkPresetCommand}" CommandParameter="amber-bloom" Content="暮金花火" />
+                    <Button Margin="0,0,6,6" Command="{Binding ApplyArtworkPresetCommand}" CommandParameter="ocean-velvet" Content="深海丝绒" />
+                    <Button Margin="0,0,6,6" Command="{Binding ApplyArtworkPresetCommand}" CommandParameter="neon-coral" Content="霓虹珊瑚" />
+                  </WrapPanel>
+                </StackPanel>
+                <StackPanel IsVisible="{Binding IsMandelbrotGenerator}" Spacing="6">
+                  <TextBlock Foreground="#8791AD" Text="Mandelbrot 经典起点" />
+                  <WrapPanel>
+                    <Button Margin="0,0,6,6" Command="{Binding ApplyArtworkPresetCommand}" CommandParameter="mandelbrot-overview" Content="全景" />
+                    <Button Margin="0,0,6,6" Command="{Binding ApplyArtworkPresetCommand}" CommandParameter="mandelbrot-seahorse" Content="海马谷" />
+                    <Button Margin="0,0,6,6" Command="{Binding ApplyArtworkPresetCommand}" CommandParameter="mandelbrot-elephant" Content="象谷" />
+                  </WrapPanel>
+                </StackPanel>
+                <TextBlock Foreground="#8791AD" Text="应用示例后仍可在“创作”和“数学”中继续修改。" TextWrapping="Wrap" />
+              </StackPanel>
+            </TabItem>
+            <TabItem Header="创作">
+              <StackPanel Margin="8" Spacing="6">
+                <TextBlock Foreground="#BFC7DB" Text="细节" />
+                <Slider Minimum="0" Maximum="100" TickFrequency="1" Value="{Binding Detail}" />
+                <StackPanel IsVisible="{Binding IsJuliaGenerator}" Spacing="6">
+                  <TextBlock Foreground="#BFC7DB" Text="流动" />
+                  <Slider Minimum="0" Maximum="100" TickFrequency="1" Value="{Binding Flow}" />
+                  <TextBlock Foreground="#BFC7DB" Text="卷曲" />
+                  <Slider Minimum="0" Maximum="100" TickFrequency="1" Value="{Binding Curl}" />
+                </StackPanel>
+                <TextBlock Foreground="#8791AD" Text="艺术控件直接映射真实数学参数，不保存第二份状态。" TextWrapping="Wrap" />
+              </StackPanel>
+            </TabItem>
+            <TabItem Header="数学">
+              <StackPanel Margin="8" Spacing="7">
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                  <TextBox Grid.Column="0" Text="{Binding CenterX}" PlaceholderText="中心 X" />
+                  <TextBox Grid.Column="1" Text="{Binding CenterY}" PlaceholderText="中心 Y" />
+                </Grid>
+                <TextBox Text="{Binding Scale}" PlaceholderText="视野尺度，例如 1e-80" />
+                <Grid IsVisible="{Binding IsJuliaGenerator}" ColumnDefinitions="*,*" ColumnSpacing="8">
+                  <TextBox Grid.Column="0" Text="{Binding ConstantReal}" PlaceholderText="常量实部" />
+                  <TextBox Grid.Column="1" Text="{Binding ConstantImaginary}" PlaceholderText="常量虚部" />
+                </Grid>
+                <NumericUpDown Increment="16" Minimum="16" Maximum="4096" Value="{Binding MaxIterations}" PlaceholderText="最大迭代" />
+                <CheckBox Foreground="#D4DAED" Content="强制任意精度" IsChecked="{Binding ForceHighPrecision}" />
+                <NumericUpDown Increment="16" Minimum="32" Maximum="1024" Value="{Binding PrecisionDigits}" PlaceholderText="十进制有效位数" />
+                <TextBlock Foreground="#8791AD" Text="拖动画布平移；滚轮以鼠标为锚点缩放。数值支持科学计数法。" TextWrapping="Wrap" />
+              </StackPanel>
+            </TabItem>
+            <TabItem Header="外观">
+              <StackPanel Margin="8" Spacing="7">
+                <WrapPanel>
+                  <Button Margin="0,0,6,6" Command="{Binding ApplyPalettePresetCommand}" CommandParameter="gold" Content="琥珀金" />
+                  <Button Margin="0,0,6,6" Command="{Binding ApplyPalettePresetCommand}" CommandParameter="cyan" Content="极光青" />
+                  <Button Margin="0,0,6,6" Command="{Binding ApplyPalettePresetCommand}" CommandParameter="magenta" Content="玫紫夜" />
+                </WrapPanel>
+                <TextBox Text="{Binding GradientStartHex}" PlaceholderText="起始 #RRGGBBAA" />
+                <TextBox Text="{Binding GradientEndHex}" PlaceholderText="结束 #RRGGBBAA" />
+              </StackPanel>
+            </TabItem>
+          </TabControl>
 
-          <Separator Margin="0,6" />
-          <TextBlock Foreground="#8791AD" Text="变体探索" />
-          <TextBlock Foreground="#BFC7DB" Text="变异强度（0.05–1.00）" />
-          <NumericUpDown Minimum="0.05" Maximum="1" Increment="0.05" FormatString="0.00" Value="{Binding MutationStrength}" />
-          <WrapPanel Orientation="Horizontal">
-            <Button Margin="0,0,6,6" Command="{Binding SetVariationModeCommand}" CommandParameter="All" Content="全部" />
-            <Button Margin="0,0,6,6" Command="{Binding SetVariationModeCommand}" CommandParameter="ShapeOnly" Content="只变形态" />
-            <Button Margin="0,0,6,6" Command="{Binding SetVariationModeCommand}" CommandParameter="TextureOnly" Content="只变质感" />
-          </WrapPanel>
-          <TextBlock Foreground="#D4DAED" Text="{Binding VariationModeName, StringFormat='当前：{0}'}" />
-          <WrapPanel Orientation="Horizontal">
-            <CheckBox Margin="0,0,10,4" Foreground="#D4DAED" Content="锁 Seed" IsChecked="{Binding IsSeedLocked}" />
-            <CheckBox Margin="0,0,10,4" Foreground="#D4DAED" Content="锁构图" IsChecked="{Binding IsCompositionLocked}" />
-            <CheckBox Margin="0,0,10,4" Foreground="#D4DAED" Content="锁形态" IsChecked="{Binding IsShapeLocked}" />
-            <CheckBox Margin="0,0,10,4" Foreground="#D4DAED" Content="锁颜色" IsChecked="{Binding IsColorLocked}" />
-          </WrapPanel>
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <CheckBox Foreground="#77819D" Content="候选保持当前生成器" IsChecked="True" IsEnabled="False" />
-            <CheckBox Foreground="#77819D" Content="效果尚未启用" IsChecked="True" IsEnabled="False" />
-          </StackPanel>
-          <Button Command="{Binding GenerateVariationsCommand}" Content="生成 9 个可重现候选" />
+          <TabControl IsVisible="{Binding IsLSystemGenerator}">
+            <TabItem Header="示例">
+              <StackPanel Margin="8" Spacing="7">
+                <TextBlock Foreground="#8791AD" Text="经典 L-System" />
+                <WrapPanel>
+                  <Button Margin="0,0,6,6" Command="{Binding ApplyArtworkPresetCommand}" CommandParameter="lsystem-koch" Content="Koch 雪花" />
+                  <Button Margin="0,0,6,6" Command="{Binding ApplyArtworkPresetCommand}" CommandParameter="lsystem-dragon" Content="Heighway 龙" />
+                  <Button Margin="0,0,6,6" Command="{Binding ApplyArtworkPresetCommand}" CommandParameter="lsystem-sierpinski" Content="Sierpiński" />
+                  <Button Margin="0,0,6,6" Command="{Binding ApplyArtworkPresetCommand}" CommandParameter="lsystem-plant" Content="分形植物" />
+                  <Button Margin="0,0,6,6" Command="{Binding ApplyArtworkPresetCommand}" CommandParameter="lsystem-hilbert" Content="Hilbert" />
+                </WrapPanel>
+                <TextBlock Foreground="#8791AD" Text="示例会填入规则和绘制参数，之后可以完全自定义。" TextWrapping="Wrap" />
+              </StackPanel>
+            </TabItem>
+            <TabItem Header="规则">
+              <StackPanel Margin="8" Spacing="7">
+                <TextBox Text="{Binding LSystemAxiom}" PlaceholderText="公理，例如 F--F--F" />
+                <TextBox Height="116" AcceptsReturn="True" TextWrapping="Wrap" Text="{Binding LSystemRulesText}" PlaceholderText="一行一个，例如 F=F+F--F+F" />
+                <NumericUpDown Minimum="0" Maximum="12" Value="{Binding LSystemIterations}" PlaceholderText="迭代层级" />
+                <TextBlock Foreground="#9FB1D3" Text="{Binding LSystemDiagnostics}" TextWrapping="Wrap" />
+                <TextBlock Foreground="#8791AD" Text="支持 A–Z、F/G 绘制、f 移动、+/- 转向、[ ] 分支。展开上限 250,000 符号、50,000 线段。" TextWrapping="Wrap" />
+              </StackPanel>
+            </TabItem>
+            <TabItem Header="绘制">
+              <StackPanel Margin="8" Spacing="7">
+                <NumericUpDown Minimum="1" Maximum="360" Increment="0.5" Value="{Binding LSystemTurnAngle}" PlaceholderText="转角（度）" />
+                <NumericUpDown Minimum="-3600" Maximum="3600" Increment="1" Value="{Binding LSystemInitialHeading}" PlaceholderText="初始方向（度）" />
+                <NumericUpDown Minimum="0.0001" Maximum="1" Increment="0.001" Value="{Binding LSystemStepLength}" PlaceholderText="步长" />
+                <NumericUpDown Minimum="0.01" Maximum="1" Increment="0.01" Value="{Binding LSystemLengthDecay}" PlaceholderText="长度衰减" />
+                <NumericUpDown Minimum="0.5" Maximum="40" Increment="0.5" Value="{Binding LSystemStrokeWidth}" PlaceholderText="基础线宽" />
+                <NumericUpDown Minimum="0.01" Maximum="1" Increment="0.01" Value="{Binding LSystemStrokeWidthDecay}" PlaceholderText="线宽衰减" />
+              </StackPanel>
+            </TabItem>
+            <TabItem Header="外观">
+              <StackPanel Margin="8" Spacing="7">
+                <WrapPanel>
+                  <Button Margin="0,0,6,6" Command="{Binding ApplyPalettePresetCommand}" CommandParameter="gold" Content="琥珀金" />
+                  <Button Margin="0,0,6,6" Command="{Binding ApplyPalettePresetCommand}" CommandParameter="cyan" Content="极光青" />
+                  <Button Margin="0,0,6,6" Command="{Binding ApplyPalettePresetCommand}" CommandParameter="magenta" Content="玫紫夜" />
+                </WrapPanel>
+                <TextBox Text="{Binding GradientStartHex}" PlaceholderText="起始 #RRGGBBAA" />
+                <TextBox Text="{Binding GradientEndHex}" PlaceholderText="结束 #RRGGBBAA" />
+              </StackPanel>
+            </TabItem>
+          </TabControl>
 
-          <StackPanel Spacing="6" IsVisible="{Binding IsJuliaGenerator}">
-            <Separator Margin="0,6" />
-            <TextBlock Foreground="#8791AD" Text="Julia 形态" />
-            <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
-              <TextBox Grid.Column="0" Text="{Binding CenterX}" PlaceholderText="中心 X" />
-              <TextBox Grid.Column="1" Text="{Binding CenterY}" PlaceholderText="中心 Y" />
-            </Grid>
-            <TextBox Text="{Binding Scale}" PlaceholderText="视野尺度，例如 1e-80" />
-            <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
-              <TextBox Grid.Column="0" Text="{Binding ConstantReal}" PlaceholderText="常量实部" />
-              <TextBox Grid.Column="1" Text="{Binding ConstantImaginary}" PlaceholderText="常量虚部" />
-            </Grid>
-            <NumericUpDown Increment="16" Minimum="16" Maximum="4096" Value="{Binding MaxIterations}" PlaceholderText="最大迭代" />
-            <CheckBox Content="强制任意精度（深度缩放时会自动启用）" IsChecked="{Binding ForceHighPrecision}" />
-            <NumericUpDown Increment="16" Minimum="32" Maximum="1024" Value="{Binding PrecisionDigits}" PlaceholderText="十进制有效位数" />
-            <TextBlock Foreground="#8791AD" Text="画布上拖动可平移；滚轮会以鼠标位置为锚点缩放。数值支持科学计数法。" TextWrapping="Wrap" />
-          </StackPanel>
-
-          <StackPanel Spacing="6" IsVisible="{Binding IsRecursiveTreeGenerator}">
-            <Separator Margin="0,6" />
-            <TextBlock Foreground="#8791AD" Text="递归树路径" />
+          <StackPanel IsVisible="{Binding IsRecursiveTreeGenerator}" Spacing="7">
+            <TextBlock Foreground="#8791AD" Text="G0005 递归树兼容编辑器" />
+            <WrapPanel>
+              <Button Margin="0,0,6,6" Command="{Binding ApplyArtworkPresetCommand}" CommandParameter="verdant-growth" Content="翡翠生长" />
+              <Button Margin="0,0,6,6" Command="{Binding ApplyArtworkPresetCommand}" CommandParameter="winter-branches" Content="月下银枝" />
+            </WrapPanel>
             <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
               <NumericUpDown Grid.Column="0" Minimum="1" Maximum="12" Value="{Binding TreeDepth}" PlaceholderText="递归层级" />
               <NumericUpDown Grid.Column="1" Minimum="2" Maximum="3" Value="{Binding TreeBranches}" PlaceholderText="每级分叉" />
             </Grid>
             <NumericUpDown Minimum="5" Maximum="85" Increment="0.5" Value="{Binding TreeBranchAngle}" PlaceholderText="分叉角度" />
-            <NumericUpDown Minimum="0.45" Maximum="0.85" Increment="0.01" FormatString="0.00" Value="{Binding TreeLengthDecay}" PlaceholderText="长度衰减" />
-            <NumericUpDown Minimum="0" Maximum="1" Increment="0.01" FormatString="0.00" Value="{Binding TreeRandomness}" PlaceholderText="随机度" />
-            <NumericUpDown Minimum="0.05" Maximum="0.6" Increment="0.01" FormatString="0.00" Value="{Binding TreeTrunkLength}" PlaceholderText="主干长度" />
-            <NumericUpDown Minimum="0.5" Maximum="40" Increment="0.5" FormatString="0.0" Value="{Binding TreeStrokeWidth}" PlaceholderText="基础线宽" />
-            <TextBlock Foreground="#8791AD" Text="生成阶段保留带层级的矢量线段；预览与 PNG 只在描边阶段栅格化。深度与分叉组合最多 50,000 条线段。" TextWrapping="Wrap" />
+            <NumericUpDown Minimum="0.45" Maximum="0.85" Increment="0.01" Value="{Binding TreeLengthDecay}" PlaceholderText="长度衰减" />
+            <NumericUpDown Minimum="0" Maximum="1" Increment="0.01" Value="{Binding TreeRandomness}" PlaceholderText="随机度" />
+            <NumericUpDown Minimum="0.05" Maximum="0.6" Increment="0.01" Value="{Binding TreeTrunkLength}" PlaceholderText="主干长度" />
+            <NumericUpDown Minimum="0.5" Maximum="40" Increment="0.5" Value="{Binding TreeStrokeWidth}" PlaceholderText="基础线宽" />
           </StackPanel>
 
-          <Separator Margin="0,6" />
-          <TextBlock Foreground="#8791AD" Text="线性渐变" />
-          <WrapPanel Orientation="Horizontal">
-            <Button Margin="0,0,6,6" Command="{Binding ApplyPalettePresetCommand}" CommandParameter="gold" Content="琥珀金" />
-            <Button Margin="0,0,6,6" Command="{Binding ApplyPalettePresetCommand}" CommandParameter="cyan" Content="极光青" />
-            <Button Margin="0,0,6,6" Command="{Binding ApplyPalettePresetCommand}" CommandParameter="magenta" Content="玫紫夜" />
-          </WrapPanel>
-          <TextBox Text="{Binding GradientStartHex}" PlaceholderText="起始 #RRGGBBAA" />
-          <TextBox Text="{Binding GradientEndHex}" PlaceholderText="结束 #RRGGBBAA" />
+          <Expander Header="变体探索" IsExpanded="False">
+            <StackPanel Margin="0,8,0,0" Spacing="7">
+              <NumericUpDown Minimum="0.05" Maximum="1" Increment="0.05" FormatString="0.00" Value="{Binding MutationStrength}" PlaceholderText="变异强度" />
+              <WrapPanel>
+                <Button Margin="0,0,6,6" Command="{Binding SetVariationModeCommand}" CommandParameter="All" Content="全部" />
+                <Button Margin="0,0,6,6" Command="{Binding SetVariationModeCommand}" CommandParameter="ShapeOnly" Content="只变形态" />
+                <Button Margin="0,0,6,6" Command="{Binding SetVariationModeCommand}" CommandParameter="TextureOnly" Content="只变质感" />
+              </WrapPanel>
+              <TextBlock Foreground="#D4DAED" Text="{Binding VariationModeName, StringFormat='当前：{0}'}" />
+              <WrapPanel>
+                <CheckBox IsVisible="{Binding IsSeedControlVisible}" Margin="0,0,10,4" Foreground="#D4DAED" Content="锁 Seed" IsChecked="{Binding IsSeedLocked}" />
+                <CheckBox Margin="0,0,10,4" Foreground="#D4DAED" Content="锁构图" IsChecked="{Binding IsCompositionLocked}" />
+                <CheckBox Margin="0,0,10,4" Foreground="#D4DAED" Content="锁形态" IsChecked="{Binding IsShapeLocked}" />
+                <CheckBox Margin="0,0,10,4" Foreground="#D4DAED" Content="锁颜色" IsChecked="{Binding IsColorLocked}" />
+              </WrapPanel>
+              <Button Command="{Binding GenerateVariationsCommand}" Content="生成 9 个可重现候选" />
+            </StackPanel>
+          </Expander>
 
           <Button Margin="0,8,0,0" Command="{Binding CancelOperationCommand}" Content="取消当前渲染/导出" IsEnabled="{Binding IsOperationBusy}" />
         </StackPanel>

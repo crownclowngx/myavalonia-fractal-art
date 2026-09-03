@@ -101,11 +101,17 @@ internal sealed class VariationGenerator(IArtworkValidator validator) : IVariati
         new("julia.constantReal", "流动", VariationLockGroups.Shape, -1.9, 1.9, 0, MutationDistribution.Uniform),
         new("julia.constantImaginary", "卷曲", VariationLockGroups.Shape, -1.9, 1.9, 0, MutationDistribution.Uniform),
         new("julia.maxIterations", "细节", VariationLockGroups.Shape, 16, 4096, 16, MutationDistribution.Discrete),
+        new("mandelbrot.centerX", "Mandelbrot 中心 X", VariationLockGroups.Composition, -3, 3, 0, MutationDistribution.Uniform),
+        new("mandelbrot.centerY", "Mandelbrot 中心 Y", VariationLockGroups.Composition, -3, 3, 0, MutationDistribution.Uniform),
+        new("mandelbrot.scale", "Mandelbrot 构图尺度", VariationLockGroups.Composition, 0.55, 1.45, 0, MutationDistribution.Logarithmic),
+        new("mandelbrot.maxIterations", "Mandelbrot 细节", VariationLockGroups.Shape, 16, 4096, 16, MutationDistribution.Discrete),
         new("tree.depth", "递归层级", VariationLockGroups.Shape, 1, 12, 1, MutationDistribution.Discrete),
         new("tree.branches", "每级分叉", VariationLockGroups.Shape, 2, 3, 1, MutationDistribution.Discrete),
         new("tree.angle", "分叉角度", VariationLockGroups.Shape, 5, 85, 0.5, MutationDistribution.Uniform),
         new("tree.lengthDecay", "长度衰减", VariationLockGroups.Shape, 0.45, 0.85, 0.01, MutationDistribution.Uniform),
         new("tree.randomness", "随机度", VariationLockGroups.Shape, 0, 1, 0.01, MutationDistribution.Uniform),
+        new("lsystem.iterations", "L-System 迭代层级", VariationLockGroups.Shape, 0, 12, 1, MutationDistribution.Discrete),
+        new("lsystem.angle", "L-System 转角", VariationLockGroups.Shape, 1, 360, 0.5, MutationDistribution.Uniform),
         new("gradient.rgb", "调色板", VariationLockGroups.Color, 0, 255, 1, MutationDistribution.Discrete),
         new("seed", "Seed", VariationLockGroups.Seed, long.MinValue, long.MaxValue, 1, MutationDistribution.Discrete)
     ];
@@ -166,11 +172,14 @@ internal sealed class VariationGenerator(IArtworkValidator validator) : IVariati
         var mutateColor = settings.Mode is VariationMode.All or VariationMode.TextureOnly;
         var mutateComposition = settings.Mode == VariationMode.All;
         var julia = source.Julia;
+        var mandelbrot = source.Mandelbrot;
         var recursiveTree = source.RecursiveTree;
+        var lSystem = source.LSystem;
         var gradient = source.Gradient;
         var seed = source.Seed;
 
-        if (!locks.HasFlag(VariationLockGroups.Seed))
+        if (source.GeneratorKind is FractalGeneratorKind.Julia or FractalGeneratorKind.RecursiveTree &&
+            !locks.HasFlag(VariationLockGroups.Seed))
         {
             seed = unchecked((long)random.NextUInt64());
         }
@@ -180,6 +189,11 @@ internal sealed class VariationGenerator(IArtworkValidator validator) : IVariati
         {
             julia = MutateComposition(julia, strength, ref random);
         }
+        else if (source.GeneratorKind == FractalGeneratorKind.Mandelbrot &&
+                 mutateComposition && !locks.HasFlag(VariationLockGroups.Composition))
+        {
+            mandelbrot = MutateComposition(mandelbrot, strength, ref random);
+        }
 
         if (mutateShape && !locks.HasFlag(VariationLockGroups.Shape))
         {
@@ -187,9 +201,17 @@ internal sealed class VariationGenerator(IArtworkValidator validator) : IVariati
             {
                 recursiveTree = MutateRecursiveTree(recursiveTree, strength, ref random);
             }
-            else
+            else if (source.GeneratorKind == FractalGeneratorKind.Julia)
             {
                 julia = MutateShape(julia, strength, ref random);
+            }
+            else if (source.GeneratorKind == FractalGeneratorKind.Mandelbrot)
+            {
+                mandelbrot = MutateShape(mandelbrot, strength, ref random);
+            }
+            else if (source.GeneratorKind == FractalGeneratorKind.LSystem)
+            {
+                lSystem = MutateLSystem(lSystem, strength, ref random);
             }
         }
 
@@ -198,7 +220,72 @@ internal sealed class VariationGenerator(IArtworkValidator validator) : IVariati
             gradient = MutateGradient(gradient, strength, ref random);
         }
 
-        return new VariationRecipeDefinition(seed, source.GeneratorKind, julia, recursiveTree, gradient);
+        return new VariationRecipeDefinition(
+            seed,
+            source.GeneratorKind,
+            julia,
+            mandelbrot,
+            recursiveTree,
+            lSystem,
+            gradient);
+    }
+
+    private static MandelbrotDefinition MutateComposition(
+        MandelbrotDefinition mandelbrot,
+        double strength,
+        ref StableRandom random)
+    {
+        var digits = mandelbrot.PrecisionDigits;
+        var scale = ArbitraryDecimal.Parse(mandelbrot.Scale);
+        var xOffset = scale.Multiply(ParseFactor(random.NextSigned() * strength * 0.35), digits);
+        var yOffset = scale.Multiply(ParseFactor(random.NextSigned() * strength * 0.35), digits);
+        var scaleFactor = ParseFactor(Math.Exp(random.NextSigned() * strength * 0.42));
+        return mandelbrot with
+        {
+            CenterX = ArbitraryDecimal.Parse(mandelbrot.CenterX).Add(xOffset, digits).ToString(),
+            CenterY = ArbitraryDecimal.Parse(mandelbrot.CenterY).Add(yOffset, digits).ToString(),
+            Scale = scale.Multiply(scaleFactor, digits).ToString()
+        };
+    }
+
+    private static MandelbrotDefinition MutateShape(
+        MandelbrotDefinition mandelbrot,
+        double strength,
+        ref StableRandom random)
+    {
+        var iterationDelta = (int)Math.Round(random.NextSigned() * strength * 512d / 16d) * 16;
+        return mandelbrot with
+        {
+            MaxIterations = Math.Clamp(mandelbrot.MaxIterations + iterationDelta, 16, 4096)
+        };
+    }
+
+    /// <summary>
+    /// 探索只扰动 L-System 的绘制参数，不改写用户规则文本。这样每个候选仍属于同一语法，
+    /// 同时避免随机规则造成难以解释的语义突变和资源预算失控。
+    /// </summary>
+    private static LSystemDefinition MutateLSystem(
+        LSystemDefinition lSystem,
+        double strength,
+        ref StableRandom random)
+    {
+        var iterationDelta = (int)Math.Round(random.NextSigned() * strength * 2);
+        return lSystem with
+        {
+            Iterations = Math.Clamp(lSystem.Iterations + iterationDelta, 0, 12),
+            TurnAngleDegrees = Math.Clamp(
+                lSystem.TurnAngleDegrees + random.NextSigned() * strength * 35,
+                1,
+                360),
+            InitialHeadingDegrees = Math.Clamp(
+                lSystem.InitialHeadingDegrees + random.NextSigned() * strength * 45,
+                -3_600,
+                3_600),
+            LengthDecay = Math.Clamp(
+                lSystem.LengthDecay + random.NextSigned() * strength * 0.12,
+                0.25,
+                1)
+        };
     }
 
     private static RecursiveTreeDefinition MutateRecursiveTree(
@@ -303,7 +390,9 @@ public sealed record ArtworkPresetDefinition(
     FractalGeneratorKind GeneratorKind,
     JuliaDefinition Julia,
     RecursiveTreeDefinition RecursiveTree,
-    GradientDefinition Gradient);
+    GradientDefinition Gradient,
+    MandelbrotDefinition? Mandelbrot = null,
+    LSystemDefinition? LSystem = null);
 
 public sealed record PalettePresetDefinition(string Id, string Name, GradientDefinition Gradient);
 
@@ -339,7 +428,30 @@ internal sealed class ArtworkPresetCatalog : IArtworkPresetCatalog
         new("winter-branches", "月下银枝", "植物与生长", FractalGeneratorKind.RecursiveTree,
             new JuliaDefinition("0", "0", "3.2", "-0.745", "0.113", 320, false, 96),
             new RecursiveTreeDefinition(8, 3, 31, 0.66, 0.18, 0.25, 3.5),
-            new GradientDefinition(new(92, 105, 138), new(225, 242, 255), new(4, 8, 18)))
+            new GradientDefinition(new(92, 105, 138), new(225, 242, 255), new(4, 8, 18))),
+        new("mandelbrot-overview", "Mandelbrot 全景", "时间逃逸", FractalGeneratorKind.Mandelbrot,
+            new JuliaDefinition("0", "0", "3.2", "-0.745", "0.113", 320, false, 96),
+            new RecursiveTreeDefinition(9, 2, 27, 0.72, 0.12, 0.28, 3.2),
+            new GradientDefinition(new(17, 25, 62), new(250, 177, 70), new(2, 4, 12)),
+            new MandelbrotDefinition("-0.5", "0", "3", 384, false, 96)),
+        new("mandelbrot-seahorse", "海马谷", "时间逃逸", FractalGeneratorKind.Mandelbrot,
+            new JuliaDefinition("0", "0", "3.2", "-0.745", "0.113", 320, false, 96),
+            new RecursiveTreeDefinition(9, 2, 27, 0.72, 0.12, 0.28, 3.2),
+            new GradientDefinition(new(10, 32, 62), new(66, 236, 202), new(1, 5, 12)),
+            new MandelbrotDefinition("-0.743643887037151", "0.13182590420533", "0.008", 768, false, 128)),
+        new("mandelbrot-elephant", "象谷", "时间逃逸", FractalGeneratorKind.Mandelbrot,
+            new JuliaDefinition("0", "0", "3.2", "-0.745", "0.113", 320, false, 96),
+            new RecursiveTreeDefinition(9, 2, 27, 0.72, 0.12, 0.28, 3.2),
+            new GradientDefinition(new(48, 14, 80), new(250, 97, 169), new(4, 1, 13)),
+            new MandelbrotDefinition("0.285", "0.01", "0.08", 720, false, 112)),
+        CreateLSystemPreset("lsystem-koch", "Koch 雪花", "F--F--F", [new('F', "F+F--F+F")], 4, 60, 0),
+        CreateLSystemPreset("lsystem-dragon", "Heighway 龙", "FX", [new('X', "X+YF+"), new('Y', "-FX-Y")], 12, 90, 0),
+        CreateLSystemPreset("lsystem-sierpinski", "Sierpiński 三角", "F-G-G",
+            [new('F', "F-G+F+G-F"), new('G', "GG")], 5, 120, 0),
+        CreateLSystemPreset("lsystem-plant", "经典分形植物", "X",
+            [new('X', "F+[[X]-X]-F[-FX]+X"), new('F', "FF")], 5, 25, -90),
+        CreateLSystemPreset("lsystem-hilbert", "Hilbert 曲线", "A",
+            [new('A', "-BF+AFA+FB-"), new('B', "+AF-BFB-FA+")], 5, 90, 0)
     ];
 
     public IReadOnlyList<PalettePresetDefinition> PalettePresets { get; } =
@@ -357,7 +469,9 @@ internal sealed class ArtworkPresetCatalog : IArtworkPresetCatalog
         {
             GeneratorKind = preset.GeneratorKind,
             Julia = preset.Julia,
+            Mandelbrot = preset.Mandelbrot ?? artwork.Mandelbrot,
             RecursiveTree = preset.RecursiveTree,
+            LSystem = preset.LSystem ?? artwork.LSystem,
             Gradient = preset.Gradient
         };
     }
@@ -368,4 +482,22 @@ internal sealed class ArtworkPresetCatalog : IArtworkPresetCatalog
             ?? throw new ArgumentException($"未知调色板：{id}。", nameof(id));
         return artwork with { Gradient = preset.Gradient };
     }
+
+    private static ArtworkPresetDefinition CreateLSystemPreset(
+        string id,
+        string name,
+        string axiom,
+        IReadOnlyList<LSystemRuleDefinition> rules,
+        int iterations,
+        double angle,
+        double heading) => new(
+            id,
+            name,
+            "递归路径",
+            FractalGeneratorKind.LSystem,
+            ArtworkDefinition.CreateDefault().Julia,
+            ArtworkDefinition.CreateDefault().RecursiveTree,
+            new GradientDefinition(new(24, 47, 43), new(126, 239, 153), new(3, 10, 12)),
+            ArtworkDefinition.CreateDefault().Mandelbrot,
+            new LSystemDefinition(axiom, rules, iterations, angle, heading, 0.02, 1, 2.8, 0.9));
 }

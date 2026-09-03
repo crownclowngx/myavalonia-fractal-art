@@ -287,6 +287,32 @@ public sealed class DocumentTests
         Assert.False(restored.CanRedo); // 恢复不会伪造当前进程的编辑历史。
     }
 
+    [Fact]
+    public async Task 生成器切换后只编辑当前时间逃逸定义且LSystem规则可自定义()
+    {
+        using var fixture = new DocumentFixture();
+        using var document = fixture.CreateDocument();
+        await document.InitializeAsync(new NewDocumentActivation("G0005.1"), CancellationToken.None);
+
+        document.SelectGeneratorCommand.Execute("Mandelbrot");
+        document.CenterX = "-0.75";
+
+        Assert.True(document.IsEscapeTimeFamily);
+        Assert.True(document.IsMandelbrotGenerator);
+        Assert.Equal("-7.5e-1", document.Artwork.Mandelbrot.CenterX);
+        Assert.Equal("0", document.Artwork.Julia.CenterX);
+
+        document.SelectGeneratorCommand.Execute("LSystem");
+        document.LSystemAxiom = "F";
+        document.LSystemRulesText = "F=F+F";
+        document.LSystemIterations = 3;
+
+        Assert.True(document.IsLSystemFamily);
+        Assert.True(document.IsLSystemGenerator);
+        Assert.Equal([new LSystemRuleDefinition('F', "F+F")], document.Artwork.LSystem.Rules);
+        Assert.Contains("8 条线段", document.LSystemDiagnostics, StringComparison.Ordinal);
+    }
+
     private static async Task WaitUntilAsync(Func<bool> predicate)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));

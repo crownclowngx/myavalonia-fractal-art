@@ -24,6 +24,7 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
     private readonly IArtisticParameterMapper _artisticParameterMapper;
     private readonly IVariationExplorer _variationExplorer;
     private readonly IArtworkPresetCatalog _presetCatalog;
+    private readonly ILSystemValidator _lSystemValidator;
     private readonly IDocumentLifetime _lifetime;
     private ArtworkDefinition _artwork = ArtworkDefinition.CreateDefault();
     private DocumentPresentationState _presentation = new("分形作品");
@@ -48,7 +49,8 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         IArtisticParameterMapper artisticParameterMapper,
         IVariationExplorer variationExplorer,
         IArtworkPresetCatalog presetCatalog,
-        IDocumentLifetime lifetime)
+        IDocumentLifetime lifetime,
+        ILSystemValidator? lSystemValidator = null)
     {
         _validator = validator;
         _snapshotCodec = snapshotCodec;
@@ -61,6 +63,7 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         _variationExplorer = variationExplorer;
         _presetCatalog = presetCatalog;
         _lifetime = lifetime;
+        _lSystemValidator = lSystemValidator ?? new LSystemValidator();
     }
 
     [ObservableProperty] private Bitmap? _previewImage;
@@ -82,18 +85,47 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
     public ObservableCollection<VariationCandidateItem> VariationCandidates { get; } = [];
     public IReadOnlyList<FavoriteVariationDefinition> Favorites => _artwork.Exploration.Favorites;
     public IReadOnlyList<ArtworkPresetDefinition> ArtworkPresets => _presetCatalog.ArtworkPresets;
+    public IReadOnlyList<ArtworkPresetDefinition> JuliaExamples =>
+        _presetCatalog.ArtworkPresets.Where(item => item.GeneratorKind == FractalGeneratorKind.Julia).ToArray();
+    public IReadOnlyList<ArtworkPresetDefinition> MandelbrotExamples =>
+        _presetCatalog.ArtworkPresets.Where(item => item.GeneratorKind == FractalGeneratorKind.Mandelbrot).ToArray();
+    public IReadOnlyList<ArtworkPresetDefinition> LSystemExamples =>
+        _presetCatalog.ArtworkPresets.Where(item => item.GeneratorKind == FractalGeneratorKind.LSystem).ToArray();
     public IReadOnlyList<PalettePresetDefinition> PalettePresets => _presetCatalog.PalettePresets;
+    public bool IsEscapeTimeFamily => _artwork.GeneratorFamily == GeneratorFamily.EscapeTime;
+    public bool IsLSystemFamily => _artwork.GeneratorFamily == GeneratorFamily.LSystem;
     public bool IsJuliaGenerator => _artwork.GeneratorKind == FractalGeneratorKind.Julia;
+    public bool IsMandelbrotGenerator => _artwork.GeneratorKind == FractalGeneratorKind.Mandelbrot;
+    public bool IsLSystemGenerator => _artwork.GeneratorKind == FractalGeneratorKind.LSystem;
     public bool IsRecursiveTreeGenerator => _artwork.GeneratorKind == FractalGeneratorKind.RecursiveTree;
-    public string GeneratorKindName => IsRecursiveTreeGenerator ? "递归树路径" : "Julia 标量场";
+    public bool IsSeedControlVisible => IsJuliaGenerator || IsRecursiveTreeGenerator;
+    public string GeneratorKindName => _artwork.GeneratorKind switch
+    {
+        FractalGeneratorKind.Julia => "时间逃逸 · Julia",
+        FractalGeneratorKind.Mandelbrot => "时间逃逸 · Mandelbrot",
+        FractalGeneratorKind.LSystem => "递归路径 · L-System",
+        _ => "递归路径 · 递归树（兼容）"
+    };
 
     /// <summary>
     /// 艺术滑杆每次都从 Julia 真实参数反算，setter 也立即写回 Julia；快照中不存在 Detail/Flow/Curl 副本。
     /// </summary>
     public int Detail
     {
-        get => _artisticParameterMapper.Read(_artwork.Julia).Detail;
-        set => TryMutate(_artwork with { Julia = _artisticParameterMapper.SetDetail(_artwork.Julia, value) });
+        get => IsMandelbrotGenerator
+            ? Math.Clamp((int)Math.Round((_artwork.Mandelbrot.MaxIterations - 64) / 960d * 100d), 0, 100)
+            : _artisticParameterMapper.Read(_artwork.Julia).Detail;
+        set
+        {
+            if (IsMandelbrotGenerator)
+            {
+                var iterations = Math.Clamp((int)Math.Round((64 + Math.Clamp(value, 0, 100) / 100d * 960) / 16d) * 16, 64, 1024);
+                TryMutate(_artwork with { Mandelbrot = _artwork.Mandelbrot with { MaxIterations = iterations } });
+                return;
+            }
+
+            TryMutate(_artwork with { Julia = _artisticParameterMapper.SetDetail(_artwork.Julia, value) });
+        }
     }
 
     public int Flow
@@ -171,23 +203,29 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
 
     public string CenterX
     {
-        get => _artwork.Julia.CenterX;
+        get => IsMandelbrotGenerator ? _artwork.Mandelbrot.CenterX : _artwork.Julia.CenterX;
         set => SetHighPrecisionNumber(value, CenterX, number =>
-            _artwork with { Julia = _artwork.Julia with { CenterX = number } });
+            IsMandelbrotGenerator
+                ? _artwork with { Mandelbrot = _artwork.Mandelbrot with { CenterX = number } }
+                : _artwork with { Julia = _artwork.Julia with { CenterX = number } });
     }
 
     public string CenterY
     {
-        get => _artwork.Julia.CenterY;
+        get => IsMandelbrotGenerator ? _artwork.Mandelbrot.CenterY : _artwork.Julia.CenterY;
         set => SetHighPrecisionNumber(value, CenterY, number =>
-            _artwork with { Julia = _artwork.Julia with { CenterY = number } });
+            IsMandelbrotGenerator
+                ? _artwork with { Mandelbrot = _artwork.Mandelbrot with { CenterY = number } }
+                : _artwork with { Julia = _artwork.Julia with { CenterY = number } });
     }
 
     public string Scale
     {
-        get => _artwork.Julia.Scale;
+        get => IsMandelbrotGenerator ? _artwork.Mandelbrot.Scale : _artwork.Julia.Scale;
         set => SetHighPrecisionNumber(value, Scale, number =>
-            _artwork with { Julia = _artwork.Julia with { Scale = number } });
+            IsMandelbrotGenerator
+                ? _artwork with { Mandelbrot = _artwork.Mandelbrot with { Scale = number } }
+                : _artwork with { Julia = _artwork.Julia with { Scale = number } });
     }
 
     public string ConstantReal
@@ -206,21 +244,27 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
 
     public int MaxIterations
     {
-        get => _artwork.Julia.MaxIterations;
-        set => Mutate(value == MaxIterations ? _artwork : _artwork with { Julia = _artwork.Julia with { MaxIterations = value } });
+        get => IsMandelbrotGenerator ? _artwork.Mandelbrot.MaxIterations : _artwork.Julia.MaxIterations;
+        set => Mutate(value == MaxIterations
+            ? _artwork
+            : IsMandelbrotGenerator
+                ? _artwork with { Mandelbrot = _artwork.Mandelbrot with { MaxIterations = value } }
+                : _artwork with { Julia = _artwork.Julia with { MaxIterations = value } });
     }
 
     public bool ForceHighPrecision
     {
-        get => _artwork.Julia.ForceHighPrecision;
+        get => IsMandelbrotGenerator ? _artwork.Mandelbrot.ForceHighPrecision : _artwork.Julia.ForceHighPrecision;
         set => Mutate(value == ForceHighPrecision
             ? _artwork
-            : _artwork with { Julia = _artwork.Julia with { ForceHighPrecision = value } });
+            : IsMandelbrotGenerator
+                ? _artwork with { Mandelbrot = _artwork.Mandelbrot with { ForceHighPrecision = value } }
+                : _artwork with { Julia = _artwork.Julia with { ForceHighPrecision = value } });
     }
 
     public int PrecisionDigits
     {
-        get => _artwork.Julia.PrecisionDigits;
+        get => IsMandelbrotGenerator ? _artwork.Mandelbrot.PrecisionDigits : _artwork.Julia.PrecisionDigits;
         set
         {
             if (value == PrecisionDigits)
@@ -228,7 +272,89 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
                 return;
             }
 
-            TryMutate(_artwork with { Julia = _artwork.Julia with { PrecisionDigits = value } });
+            TryMutate(IsMandelbrotGenerator
+                ? _artwork with { Mandelbrot = _artwork.Mandelbrot with { PrecisionDigits = value } }
+                : _artwork with { Julia = _artwork.Julia with { PrecisionDigits = value } });
+        }
+    }
+
+    public string LSystemAxiom
+    {
+        get => _artwork.LSystem.Axiom;
+        set => TryMutate(_artwork with { LSystem = _artwork.LSystem with { Axiom = value ?? string.Empty } });
+    }
+
+    /// <summary>
+    /// 自定义规则使用“一行一个 A=替换串”的紧凑文本。解析成功后才一次性替换领域规则，
+    /// 因此半行输入或重复左值不会把不完整语法写入作品历史。
+    /// </summary>
+    public string LSystemRulesText
+    {
+        get => string.Join(Environment.NewLine, _artwork.LSystem.Rules.Select(rule => $"{rule.Symbol}={rule.Replacement}"));
+        set
+        {
+            try
+            {
+                var rules = ParseLSystemRules(value);
+                TryMutate(_artwork with { LSystem = _artwork.LSystem with { Rules = rules } });
+            }
+            catch (InvalidDataException exception)
+            {
+                StatusMessage = exception.Message;
+            }
+        }
+    }
+
+    public int LSystemIterations
+    {
+        get => _artwork.LSystem.Iterations;
+        set => TryMutate(_artwork with { LSystem = _artwork.LSystem with { Iterations = value } });
+    }
+
+    public double LSystemTurnAngle
+    {
+        get => _artwork.LSystem.TurnAngleDegrees;
+        set => TryMutate(_artwork with { LSystem = _artwork.LSystem with { TurnAngleDegrees = value } });
+    }
+
+    public double LSystemInitialHeading
+    {
+        get => _artwork.LSystem.InitialHeadingDegrees;
+        set => TryMutate(_artwork with { LSystem = _artwork.LSystem with { InitialHeadingDegrees = value } });
+    }
+
+    public double LSystemStepLength
+    {
+        get => _artwork.LSystem.StepLength;
+        set => TryMutate(_artwork with { LSystem = _artwork.LSystem with { StepLength = value } });
+    }
+
+    public double LSystemLengthDecay
+    {
+        get => _artwork.LSystem.LengthDecay;
+        set => TryMutate(_artwork with { LSystem = _artwork.LSystem with { LengthDecay = value } });
+    }
+
+    public double LSystemStrokeWidth
+    {
+        get => _artwork.LSystem.StrokeWidth;
+        set => TryMutate(_artwork with { LSystem = _artwork.LSystem with { StrokeWidth = value } });
+    }
+
+    public double LSystemStrokeWidthDecay
+    {
+        get => _artwork.LSystem.StrokeWidthDecay;
+        set => TryMutate(_artwork with { LSystem = _artwork.LSystem with { StrokeWidthDecay = value } });
+    }
+
+    public string LSystemDiagnostics
+    {
+        get
+        {
+            var result = _lSystemValidator.Analyze(_artwork.LSystem);
+            return result.IsValid
+                ? $"预计 {result.ExpandedSymbolCount:N0} 个符号 · {result.EstimatedSegmentCount:N0} 条线段 · 栈深 {result.EstimatedStackDepth:N0}"
+                : string.Join(" ", result.Errors.Select(error => error.Message));
         }
     }
 
@@ -625,7 +751,7 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
     internal void BeginViewportInteraction()
     {
         ThrowIfDisposed();
-        if (!IsJuliaGenerator)
+        if (!IsEscapeTimeFamily)
         {
             return;
         }
@@ -635,15 +761,18 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
 
     internal void PanViewport(double deltaX, double deltaY, double viewportHeight)
     {
-        if (!IsJuliaGenerator)
+        if (!IsEscapeTimeFamily)
         {
             return;
         }
 
-        var candidate = _artwork with
-        {
-            Julia = HighPrecisionViewport.Pan(_artwork.Julia, deltaX, deltaY, viewportHeight)
-        };
+        var candidate = IsMandelbrotGenerator
+            ? WithMandelbrotViewport(HighPrecisionViewport.Pan(
+                ToJuliaViewport(_artwork.Mandelbrot), deltaX, deltaY, viewportHeight))
+            : _artwork with
+            {
+                Julia = HighPrecisionViewport.Pan(_artwork.Julia, deltaX, deltaY, viewportHeight)
+            };
         TransientPreview = TransientPreview.Pan(deltaX, deltaY);
         TryMutate(candidate, recordHistory: _viewportInteractionStart is null);
     }
@@ -670,21 +799,29 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         double viewportHeight,
         double wheelDelta)
     {
-        if (!IsJuliaGenerator)
+        if (!IsEscapeTimeFamily)
         {
             return;
         }
 
-        var candidate = _artwork with
-        {
-            Julia = HighPrecisionViewport.ZoomAt(
-                _artwork.Julia,
+        var candidate = IsMandelbrotGenerator
+            ? WithMandelbrotViewport(HighPrecisionViewport.ZoomAt(
+                ToJuliaViewport(_artwork.Mandelbrot),
                 pointerX,
                 pointerY,
                 viewportWidth,
                 viewportHeight,
-                wheelDelta)
-        };
+                wheelDelta))
+            : _artwork with
+            {
+                Julia = HighPrecisionViewport.ZoomAt(
+                    _artwork.Julia,
+                    pointerX,
+                    pointerY,
+                    viewportWidth,
+                    viewportHeight,
+                    wheelDelta)
+            };
         if (candidate == _artwork)
         {
             return;
@@ -695,6 +832,51 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         TransientPreview = TransientPreview.Zoom(factor, pointerX, pointerY);
         TryMutate(candidate);
     }
+
+    private static IReadOnlyList<LSystemRuleDefinition> ParseLSystemRules(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            throw new InvalidDataException("请至少输入一条产生式，例如 F=F+F。");
+        }
+
+        var rules = new List<LSystemRuleDefinition>();
+        foreach (var rawLine in text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (rawLine.Length < 2 || rawLine[1] != '=' || rawLine[0] is < 'A' or > 'Z')
+            {
+                throw new InvalidDataException($"规则“{rawLine}”格式错误；请使用一行一个 A=替换串。");
+            }
+
+            rules.Add(new LSystemRuleDefinition(rawLine[0], rawLine[2..]));
+        }
+
+        return rules;
+    }
+
+    /// <summary>
+    /// 视口算法本身只依赖中心、尺度和精度。这里用 JuliaDefinition 作为已有值对象适配器，
+    /// 然后只把三项视口结果写回 Mandelbrot；常量字段从不进入 Mandelbrot 领域模型。
+    /// </summary>
+    private static JuliaDefinition ToJuliaViewport(MandelbrotDefinition definition) => new(
+        definition.CenterX,
+        definition.CenterY,
+        definition.Scale,
+        "0",
+        "0",
+        definition.MaxIterations,
+        definition.ForceHighPrecision,
+        definition.PrecisionDigits);
+
+    private ArtworkDefinition WithMandelbrotViewport(JuliaDefinition viewport) => _artwork with
+    {
+        Mandelbrot = _artwork.Mandelbrot with
+        {
+            CenterX = viewport.CenterX,
+            CenterY = viewport.CenterY,
+            Scale = viewport.Scale
+        }
+    };
 
     private bool IsLocked(VariationLockGroups group) => _artwork.Exploration.Locks.HasFlag(group);
 
@@ -927,7 +1109,7 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
                     Presentation = snapshot.Presentation with { HighQualityPreview = false }
                 })
                 : requestedContext;
-            var precisionLabel = snapshot.GeneratorKind == FractalGeneratorKind.RecursiveTree
+            var precisionLabel = snapshot.GeneratorFamily == GeneratorFamily.LSystem
                 ? "递归路径描边"
                 : context.NumericPrecision == NumericPrecision.Arbitrary
                 ? $"任意精度 {context.EffectivePrecisionDigits}/{context.ConfiguredPrecisionDigits} 位"
@@ -1004,8 +1186,8 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         var fallback = diagnostics is { PrecisionFallbackPixels: > 0 }
             ? $" · 回退 {diagnostics.PrecisionFallbackPixels} 像素"
             : string.Empty;
-        var precision = result.Diagnostics?.Kernel == "recursive-tree"
-            ? "递归路径描边"
+        var precision = result.Diagnostics?.Kernel is "recursive-tree" or "l-system"
+            ? result.Diagnostics.Kernel == "l-system" ? "L-System 路径描边" : "递归树路径描边"
             : context.NumericPrecision == NumericPrecision.Arbitrary
             ? $"任意精度 {context.EffectivePrecisionDigits}/{context.ConfiguredPrecisionDigits} 位"
             : "double 快速模式";
@@ -1019,8 +1201,13 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         OnPropertyChanged(nameof(CanvasHeight));
         OnPropertyChanged(nameof(BackgroundHex));
         OnPropertyChanged(nameof(Seed));
+        OnPropertyChanged(nameof(IsEscapeTimeFamily));
+        OnPropertyChanged(nameof(IsLSystemFamily));
         OnPropertyChanged(nameof(IsJuliaGenerator));
+        OnPropertyChanged(nameof(IsMandelbrotGenerator));
+        OnPropertyChanged(nameof(IsLSystemGenerator));
         OnPropertyChanged(nameof(IsRecursiveTreeGenerator));
+        OnPropertyChanged(nameof(IsSeedControlVisible));
         OnPropertyChanged(nameof(GeneratorKindName));
         OnPropertyChanged(nameof(CenterX));
         OnPropertyChanged(nameof(CenterY));
@@ -1040,6 +1227,16 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         OnPropertyChanged(nameof(TreeRandomness));
         OnPropertyChanged(nameof(TreeTrunkLength));
         OnPropertyChanged(nameof(TreeStrokeWidth));
+        OnPropertyChanged(nameof(LSystemAxiom));
+        OnPropertyChanged(nameof(LSystemRulesText));
+        OnPropertyChanged(nameof(LSystemIterations));
+        OnPropertyChanged(nameof(LSystemTurnAngle));
+        OnPropertyChanged(nameof(LSystemInitialHeading));
+        OnPropertyChanged(nameof(LSystemStepLength));
+        OnPropertyChanged(nameof(LSystemLengthDecay));
+        OnPropertyChanged(nameof(LSystemStrokeWidth));
+        OnPropertyChanged(nameof(LSystemStrokeWidthDecay));
+        OnPropertyChanged(nameof(LSystemDiagnostics));
         OnPropertyChanged(nameof(GradientStartHex));
         OnPropertyChanged(nameof(GradientEndHex));
         OnPropertyChanged(nameof(HighQualityPreview));

@@ -19,7 +19,18 @@ public sealed class PersistenceTests
             Canvas = new CanvasDefinition(2048, 1536, new RgbaColor(1, 2, 3, 4)),
             GeneratorKind = FractalGeneratorKind.RecursiveTree,
             Julia = new JuliaDefinition("-0.12", "0.34", "1.5e-80", "-0.8", "0.156", 777, true, 128),
+            Mandelbrot = new MandelbrotDefinition("-0.743", "0.131", "0.004", 900, true, 160),
             RecursiveTree = new RecursiveTreeDefinition(8, 3, 32, 0.66, 0.2, 0.24, 5.5),
+            LSystem = new LSystemDefinition(
+                "F--F--F",
+                [new('F', "F+F--F+F")],
+                3,
+                60,
+                0,
+                0.02,
+                1,
+                2.5,
+                0.9),
             Gradient = new GradientDefinition(
                 new RgbaColor(10, 20, 30),
                 new RgbaColor(200, 210, 220),
@@ -47,7 +58,7 @@ public sealed class PersistenceTests
     public void 未知作品格式版本被明确拒绝且不会静默迁移()
     {
         var valid = _codec.Encode(ArtworkDefinition.CreateDefault());
-        var json = valid.Payload.GetRawText().Replace("\"formatVersion\":4", "\"formatVersion\":99", StringComparison.Ordinal);
+        var json = valid.Payload.GetRawText().Replace("\"formatVersion\":5", "\"formatVersion\":99", StringComparison.Ordinal);
         using var payload = JsonDocument.Parse(json);
         var content = new DocumentContent(ArtworkSnapshotCodec.ContentSchemaVersion, payload.RootElement);
 
@@ -74,7 +85,7 @@ public sealed class PersistenceTests
     }
 
     [Fact]
-    public void V4缺失路径字段或使用未知生成器时不会静默采用默认值()
+    public void V5缺失生成器字段或使用未知生成器时不会静默采用默认值()
     {
         var encoded = _codec.Encode(ArtworkDefinition.CreateDefault());
         var missingTree = JsonNode.Parse(encoded.Payload.GetRawText())!.AsObject();
@@ -150,7 +161,7 @@ public sealed class PersistenceTests
     }
 
     [Fact]
-    public void V4快照保存生成器路径与探索配方但不保存运行态对象()
+    public void V5快照保存两类生成器配方但不保存运行态对象()
     {
         var content = _codec.Encode(ArtworkDefinition.CreateDefault());
         var json = content.Payload.GetRawText();
@@ -160,9 +171,11 @@ public sealed class PersistenceTests
         Assert.DoesNotContain("kernel", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("transient", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("previewImage", json, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(4, content.Payload.GetProperty("formatVersion").GetInt32());
+        Assert.Equal(5, content.Payload.GetProperty("formatVersion").GetInt32());
         Assert.True(content.Payload.TryGetProperty("generatorKind", out _));
+        Assert.True(content.Payload.TryGetProperty("mandelbrot", out _));
         Assert.True(content.Payload.TryGetProperty("recursiveTree", out _));
+        Assert.True(content.Payload.TryGetProperty("lSystem", out _));
         Assert.True(content.Payload.TryGetProperty("exploration", out _));
     }
 
@@ -239,6 +252,31 @@ public sealed class PersistenceTests
             Assert.Equal(FractalGeneratorKind.Julia, candidate.Recipe.GeneratorKind);
             Assert.Equal(ArtworkDefinition.CreateDefault().RecursiveTree, candidate.Recipe.RecursiveTree);
         });
+    }
+
+    [Fact]
+    public void V4递归树作品迁移时保持旧路径并补入新生成器默认值()
+    {
+        var expectedTree = new RecursiveTreeDefinition(7, 3, 34, 0.64, 0.18, 0.3, 4.5);
+        var source = ArtworkDefinition.CreateDefault() with
+        {
+            GeneratorKind = FractalGeneratorKind.RecursiveTree,
+            RecursiveTree = expectedTree
+        };
+        var root = JsonNode.Parse(_codec.Encode(source).Payload.GetRawText())!.AsObject();
+        root["formatVersion"] = 4;
+        root.Remove("mandelbrot");
+        root.Remove("lSystem");
+
+        var migrated = _codec.Decode(new DocumentContent(
+            ArtworkSnapshotCodec.ContentSchemaVersion,
+            JsonSerializer.SerializeToElement(root)));
+
+        Assert.Equal(ArtworkDefinition.CurrentFormatVersion, migrated.FormatVersion);
+        Assert.Equal(FractalGeneratorKind.RecursiveTree, migrated.GeneratorKind);
+        Assert.Equal(expectedTree, migrated.RecursiveTree);
+        Assert.Equal(ArtworkDefinition.CreateDefault().Mandelbrot, migrated.Mandelbrot);
+        Assert.Equal(ArtworkDefinition.CreateDefault().LSystem, migrated.LSystem);
     }
 
     [Fact]

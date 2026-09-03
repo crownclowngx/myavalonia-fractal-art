@@ -1,6 +1,6 @@
 # G0005.1 实施方案：逃逸时间与 L-System
 
-> 文档状态：待实施技术基线，不代表代码已经完成
+> 文档状态：已实施；本文件同时记录计划基线与最终落地差异
 
 ## 总体结构
 
@@ -23,18 +23,20 @@ Turtle 解释都不进入 Document。
 
 ## v5 生成器定义
 
-当前 v4 同时保存 Julia 与递归树定义，随着公式增加会产生越来越多无效字段。v5 应收敛为显式带标签定义：
+v5 使用稳定的 `FractalGeneratorKind` 数值标签，并为四种受支持生成器保存明确的不可变定义：
 
 ```text
-GeneratorDefinition
-├─ Family
-├─ EscapeTime?          # Family = EscapeTime 时必须且只能存在这一项
-├─ LSystem?             # Family = LSystem 时必须且只能存在这一项
-└─ LegacyRecursiveTree? # 只为 v4 精确兼容，界面归入 L-System 家族
+ArtworkDefinition
+├─ GeneratorKind: Julia | RecursiveTree | Mandelbrot | LSystem
+├─ Julia
+├─ Mandelbrot
+├─ RecursiveTree
+└─ LSystem
 ```
 
-这里使用普通不可变 record 和显式验证，不依赖反射多态序列化。快照 DTO 仍由 `ArtworkSnapshotCodec` 独占，
-DTO 的可空字段只用于检测缺失内容；领域对象发布前必须验证“恰好一个有效分支”。
+这里刻意保留普通 record 和追加式枚举，不引入多态 JSON、反射扫描或通用节点框架。所有定义均被验证，当前标签只决定
+哪条渲染策略生效；这样 v4 的 Julia/递归树配方可以精确迁移，候选切换也不会丢掉另一类自定义内容。快照 DTO 仍由
+`ArtworkSnapshotCodec` 独占，v5 新字段缺失时会整体拒绝，不用默认值掩盖损坏。
 
 ### 逃逸时间定义
 
@@ -124,14 +126,15 @@ ExampleDefinition → 当前 GeneratorDefinition → 验证 → 历史记录 →
 
 ## 上下文编辑器拆分
 
-不继续把所有 getter/setter 堆入 `FractalArtworkDocument`。建议拆分为三个 Document Scope 内的呈现模型：
+交互层没有为首批字段引入新的消息总线或通用表单框架。当前由一个 Document Scope 内的主呈现模型暴露三组明确属性：
 
-- `GeneratorNavigationModel`：当前家族、公式和示例选择；
-- `EscapeTimeEditorModel`：逃逸时间的创作/数学参数投影；
-- `LSystemEditorModel`：规则表、绘制参数、预算和诊断。
+- 生成器导航：当前家族、公式和示例选择；
+- 逃逸时间编辑：共用视口/精度，以及 Julia 专属常量；
+- L-System 编辑：规则文本、绘制参数、预算和诊断。
 
-三个模型通过一个窄的作品编辑上下文读取当前不可变定义并请求替换。上下文统一调用验证、历史、Dirty 和预览调度，
-编辑器不能自行保存第二份作品，也不能直接启动渲染。对应 AXAML 拆为小型 View，再由主 View 按当前家族组合。
+所有 setter 仍只替换同一个不可变 `ArtworkDefinition`，统一经过验证、历史、Dirty 和预览 generation；没有编辑器缓存第二份
+可渲染状态。AXAML 用上下文可见性与页签组合两组检查器。等 G0006 出现第三个新家族时，再基于真实重复抽取独立子模型，
+避免现在为两组表单提前建立抽象层级。
 
 ## 变体规则
 

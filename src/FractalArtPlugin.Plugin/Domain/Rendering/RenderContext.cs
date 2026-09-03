@@ -52,23 +52,32 @@ public sealed record RenderContext(
     private static RenderContext Create(ArtworkDefinition artwork, RenderQuality quality)
     {
         ArgumentNullException.ThrowIfNull(artwork);
-        var numericPrecision = artwork.GeneratorKind == FractalGeneratorKind.Julia
-            ? ResolveNumericPrecision(artwork.Julia)
-            : NumericPrecision.Double;
+        var isEscapeTime = artwork.GeneratorKind is FractalGeneratorKind.Julia or FractalGeneratorKind.Mandelbrot;
+        var configuredDigits = artwork.GeneratorKind == FractalGeneratorKind.Mandelbrot
+            ? artwork.Mandelbrot.PrecisionDigits
+            : artwork.Julia.PrecisionDigits;
+        var numericPrecision = artwork.GeneratorKind switch
+        {
+            FractalGeneratorKind.Julia => ResolveNumericPrecision(artwork.Julia),
+            FractalGeneratorKind.Mandelbrot => ResolveNumericPrecision(artwork.Mandelbrot),
+            _ => NumericPrecision.Double
+        };
         var maximum = quality == RenderQuality.Final
             ? Math.Max(artwork.Canvas.Width, artwork.Canvas.Height)
-            : artwork.GeneratorKind == FractalGeneratorKind.Julia && numericPrecision == NumericPrecision.Arbitrary
-                ? ResolveArbitraryPreviewBudget(artwork.Julia.PrecisionDigits, artwork.Presentation.HighQualityPreview)
+            : isEscapeTime && numericPrecision == NumericPrecision.Arbitrary
+                ? ResolveArbitraryPreviewBudget(configuredDigits, artwork.Presentation.HighQualityPreview)
                 : artwork.Presentation.HighQualityPreview ? 960 : 480;
         var ratio = quality == RenderQuality.Final
             ? 1d
             : Math.Min(1d, Math.Min((double)maximum / artwork.Canvas.Width, (double)maximum / artwork.Canvas.Height));
         var width = Math.Max(1, (int)Math.Round(artwork.Canvas.Width * ratio));
         var height = Math.Max(1, (int)Math.Round(artwork.Canvas.Height * ratio));
-        var descriptor = artwork.GeneratorKind == FractalGeneratorKind.Julia && numericPrecision == NumericPrecision.Arbitrary
-            ? PrecisionPolicy.Default.Describe(artwork.Julia, height)
+        var descriptor = isEscapeTime && numericPrecision == NumericPrecision.Arbitrary
+            ? artwork.GeneratorKind == FractalGeneratorKind.Mandelbrot
+                ? PrecisionPolicy.Default.Describe(artwork.Mandelbrot, height)
+                : PrecisionPolicy.Default.Describe(artwork.Julia, height)
             : new PrecisionDescriptor(
-                artwork.Julia.PrecisionDigits,
+                configuredDigits,
                 16,
                 16,
                 0,
@@ -93,6 +102,11 @@ public sealed record RenderContext(
 
     private static NumericPrecision ResolveNumericPrecision(JuliaDefinition julia) =>
         julia.ForceHighPrecision || ArbitraryDecimal.Parse(julia.Scale).AdjustedExponent <= -12
+            ? NumericPrecision.Arbitrary
+            : NumericPrecision.Double;
+
+    private static NumericPrecision ResolveNumericPrecision(MandelbrotDefinition mandelbrot) =>
+        mandelbrot.ForceHighPrecision || ArbitraryDecimal.Parse(mandelbrot.Scale).AdjustedExponent <= -12
             ? NumericPrecision.Arbitrary
             : NumericPrecision.Double;
 

@@ -1,4 +1,4 @@
-# G0001–G0005 质量基线与门禁
+# G0001–G0005.1 质量基线与门禁
 
 ## 首要约束
 
@@ -56,6 +56,11 @@ dotnet format FractalArtPlugin.slnx --verify-no-changes --no-restore
 - 树变体覆盖层级、分叉、角度、长度衰减和随机度，且不切换当前生成器；
 - v4 递归树与候选配方完整往返，v3 作品和候选明确迁移为 Julia；
 - Julia 与递归树共用同一 Document、预览、九宫格、历史、保存和 PNG 导出基础设施。
+- Mandelbrot 已知内外点、double/任意精度分类一致、取消与统一标量场诊断；
+- 经典 L-System 的固定线段数、规则展开、Turtle 状态恢复、路径归一化和 RGBA 描边；
+- L-System 非法符号、括号失衡、符号/线段预算和预先取消；
+- Mandelbrot/L-System 示例目录、上下文切换、自定义字段、公式/规则锁定的确定性变体；
+- v5 完整往返与 v4 递归树精确迁移，v1–v3 继续显式迁移到 Julia。
 
 Standalone 烟雾验证必须确认窗口句柄非零且标题可见。仅检查进程仍在运行无法区分正常 GUI 与 UI 线程死锁，
 不得作为启动成功证据。

@@ -10,7 +10,7 @@ internal sealed class PathStrokeRenderer : IPathStrokeRenderer
 {
     public RgbaImage Render(
         PathGeometry geometry,
-        RecursiveTreeDefinition definition,
+        PathStrokeDefinition stroke,
         GradientDefinition gradient,
         RgbaColor background,
         RenderContext context,
@@ -30,7 +30,7 @@ internal sealed class PathStrokeRenderer : IPathStrokeRenderer
             var segment = geometry.Segments[index];
             var levelAmount = geometry.MaximumLevel == 0 ? 0d : segment.Level / (double)geometry.MaximumLevel;
             var color = Interpolate(gradient.Start, gradient.End, levelAmount);
-            var width = Math.Max(0.65, definition.StrokeWidth * scale * Math.Pow(0.82, segment.Level));
+            var width = Math.Max(0.65, stroke.Width * scale * Math.Pow(stroke.LevelDecay, segment.Level));
             DrawSegment(pixels, context.Width, context.Height, segment, width, color);
         }
 
@@ -39,7 +39,7 @@ internal sealed class PathStrokeRenderer : IPathStrokeRenderer
             context.Width,
             context.Height,
             pixels,
-            new RenderDiagnostics("recursive-tree", 0, 0, 1, 0, 0));
+            new RenderDiagnostics(stroke.KernelName, 0, 0, 1, 0, 0));
     }
 
     private static byte[] CreateBackground(int width, int height, RgbaColor color)

@@ -133,7 +133,7 @@ public sealed class RecursivePathTests
         var geometry = generator.Generate(artwork.RecursiveTree with { Depth = 2 }, artwork.Seed, CancellationToken.None);
         Assert.ThrowsAny<OperationCanceledException>(() => new PathStrokeRenderer().Render(
             geometry,
-            artwork.RecursiveTree,
+            new PathStrokeDefinition(artwork.RecursiveTree.StrokeWidth, 0.82),
             artwork.Gradient,
             artwork.Canvas.Background,
             new RenderContext(64, 64, RenderQuality.Draft, artwork.Seed,

@@ -10,6 +10,13 @@ public interface IArtworkValidator
 /// <summary>集中维护作品资源预算；UI 限制、渲染策略与持久化均不能绕过这一领域边界。</summary>
 internal sealed class ArtworkValidator : IArtworkValidator
 {
+    private readonly ILSystemValidator _lSystemValidator;
+
+    public ArtworkValidator(ILSystemValidator? lSystemValidator = null)
+    {
+        _lSystemValidator = lSystemValidator ?? new LSystemValidator();
+    }
+
     public void Validate(ArtworkDefinition artwork)
     {
         ArgumentNullException.ThrowIfNull(artwork);
@@ -30,7 +37,9 @@ internal sealed class ArtworkValidator : IArtworkValidator
         }
 
         ValidateJulia(artwork.Julia);
+        ValidateMandelbrot(artwork.Mandelbrot);
         ValidateRecursiveTree(artwork.RecursiveTree);
+        _lSystemValidator.Validate(artwork.LSystem);
 
         if (string.IsNullOrWhiteSpace(artwork.Presentation.SelectedSection) ||
             artwork.Presentation.SelectedSection.Length > 32)
@@ -109,11 +118,39 @@ internal sealed class ArtworkValidator : IArtworkValidator
         }
     }
 
+    private static void ValidateMandelbrot(MandelbrotDefinition definition)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        if (definition.PrecisionDigits is < 32 or > 1024 ||
+            !ArbitraryDecimal.TryParse(definition.CenterX, out var centerX) ||
+            !ArbitraryDecimal.TryParse(definition.CenterY, out var centerY) ||
+            !ArbitraryDecimal.TryParse(definition.Scale, out var scale))
+        {
+            throw new InvalidDataException("Mandelbrot 高精度参数格式非法，或精度不在 32–1024 位范围内。");
+        }
+
+        var minimumStoredExponent = -(definition.PrecisionDigits + 16);
+        if (!IsRepresentable(centerX, definition.PrecisionDigits, minimumStoredExponent) ||
+            !IsRepresentable(centerY, definition.PrecisionDigits, minimumStoredExponent) ||
+            !IsRepresentable(scale, definition.PrecisionDigits, minimumStoredExponent) ||
+            centerX.CompareTo(ArbitraryDecimal.Parse("-1000000")) < 0 ||
+            centerX.CompareTo(ArbitraryDecimal.Parse("1000000")) > 0 ||
+            centerY.CompareTo(ArbitraryDecimal.Parse("-1000000")) < 0 ||
+            centerY.CompareTo(ArbitraryDecimal.Parse("1000000")) > 0 ||
+            scale.CompareTo(ArbitraryDecimal.Zero) <= 0 ||
+            scale.CompareTo(ArbitraryDecimal.Parse("10")) > 0 ||
+            scale.AdjustedExponent < -(definition.PrecisionDigits - 8) ||
+            definition.MaxIterations is < 16 or > 4096)
+        {
+            throw new InvalidDataException("Mandelbrot 参数超出中心、尺度、迭代或精度安全预算。");
+        }
+    }
+
     /// <summary>
     /// 候选和收藏会随外部作品文件进入渲染管线，因此这里逐项验证真实配方、数量、身份与枚举范围。
     /// 任何一项失败都会阻止整个快照发布，不能让部分非法候选潜伏到稍后的点击操作。
     /// </summary>
-    private static void ValidateExploration(ArtworkExplorationDefinition exploration)
+    private void ValidateExploration(ArtworkExplorationDefinition exploration)
     {
         ArgumentNullException.ThrowIfNull(exploration);
         if (!double.IsFinite(exploration.MutationStrength) || exploration.MutationStrength is < 0.05 or > 1 ||
@@ -155,7 +192,7 @@ internal sealed class ArtworkValidator : IArtworkValidator
         }
     }
 
-    private static void ValidateRecipe(VariationRecipeDefinition recipe)
+    private void ValidateRecipe(VariationRecipeDefinition recipe)
     {
         ArgumentNullException.ThrowIfNull(recipe);
         if (!Enum.IsDefined(recipe.GeneratorKind))
@@ -164,7 +201,9 @@ internal sealed class ArtworkValidator : IArtworkValidator
         }
 
         ValidateJulia(recipe.Julia);
+        ValidateMandelbrot(recipe.Mandelbrot);
         ValidateRecursiveTree(recipe.RecursiveTree);
+        _lSystemValidator.Validate(recipe.LSystem);
     }
 
     private static bool IsValidIdentity(string? value) =>
