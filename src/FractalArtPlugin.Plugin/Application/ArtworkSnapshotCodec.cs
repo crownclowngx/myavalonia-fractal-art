@@ -26,7 +26,7 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
     public DocumentContent Encode(ArtworkDefinition artwork)
     {
         validator.Validate(artwork);
-        var dto = new SnapshotV7Dto(
+        var dto = new SnapshotLayeredDto(
             artwork.FormatVersion,
             new CanvasDto(artwork.Canvas.Width, artwork.Canvas.Height, artwork.Canvas.Background.ToHex()),
             new PresentationDto(
@@ -61,7 +61,8 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
             4 => DecodeVersion4(content.Payload),
             5 => DecodeVersion5(content.Payload),
             6 => DecodeVersion6(content.Payload),
-            ArtworkDefinition.CurrentFormatVersion => DecodeVersion7(content.Payload),
+            7 => DecodeLayeredVersion(content.Payload, 7),
+            ArtworkDefinition.CurrentFormatVersion => DecodeLayeredVersion(content.Payload, ArtworkDefinition.CurrentFormatVersion),
             _ => throw new NotSupportedException($"不支持作品格式版本 {formatVersion}。")
         };
     }
@@ -70,24 +71,28 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
 
     private ArtworkDefinition DecodeVersion6(JsonElement payload) => DecodeVersionedSnapshot(payload, 6);
 
-    private ArtworkDefinition DecodeVersion7(JsonElement payload)
+    /// <summary>
+    /// v7 与 v8 共用图层树外形；v8 为每层和每个探索配方增加吸引子字段。读取 v7 时只补安全默认值，
+    /// 不改变任何旧生成器参数，读取 v8 时则把吸引子字段视为必要内容，避免损坏文件静默降级。
+    /// </summary>
+    private ArtworkDefinition DecodeLayeredVersion(JsonElement payload, int sourceVersion)
     {
-        SnapshotV7Dto? dto;
+        SnapshotLayeredDto? dto;
         try
         {
-            dto = payload.Deserialize<SnapshotV7Dto>(JsonOptions);
+            dto = payload.Deserialize<SnapshotLayeredDto>(JsonOptions);
         }
         catch (JsonException exception)
         {
-            throw new InvalidDataException("v7 作品 JSON 结构损坏。", exception);
+            throw new InvalidDataException($"v{sourceVersion} 作品 JSON 结构损坏。", exception);
         }
 
-        if (dto?.FormatVersion != ArtworkDefinition.CurrentFormatVersion || dto.Canvas?.Width is null ||
+        if (dto?.FormatVersion != sourceVersion || dto.Canvas?.Width is null ||
             dto.Canvas.Height is null || !RgbaColor.TryParse(dto.Canvas.Background, out var background) ||
             dto.Presentation?.HighQualityPreview is null || string.IsNullOrWhiteSpace(dto.Presentation.SelectedSection) ||
             string.IsNullOrWhiteSpace(dto.Presentation.SelectedLayerId) || dto.Layers is null || dto.MasterEffects is null)
         {
-            throw new InvalidDataException("v7 作品缺少画布、呈现、图层或 Master Effects 必要字段。");
+            throw new InvalidDataException($"v{sourceVersion} 作品缺少画布、呈现、图层或 Master Effects 必要字段。");
         }
 
         var artwork = new ArtworkDefinition(
@@ -98,7 +103,7 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
                 dto.Presentation.HighQualityPreview.Value,
                 dto.Presentation.SelectedLayerId),
             dto.Layers.Select(layer => DecodeLayer(layer ??
-                throw new InvalidDataException("v7 图层集合包含 null。"))),
+                throw new InvalidDataException($"v{sourceVersion} 图层集合包含 null。"), sourceVersion)),
             DecodeMasterEffects(dto.MasterEffects));
         validator.Validate(artwork);
         return artwork;
@@ -359,6 +364,19 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
         double? LengthDecay,
         double? StrokeWidth,
         double? StrokeWidthDecay);
+    private sealed record StrangeAttractorDto(
+        int? Formula,
+        double? A,
+        double? B,
+        double? C,
+        double? D,
+        int? BurnInIterations,
+        int? SampleCount,
+        double? Exposure,
+        double? Gamma,
+        bool? GlowEnabled,
+        double? GlowSigma,
+        double? GlowStrength);
     private sealed record GradientDto(string? Start, string? End, string? Interior);
     private sealed record PresentationDto(
         string? SelectedSection,
@@ -380,6 +398,7 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
         MandelbrotDto? Mandelbrot,
         RecursiveTreeDto? RecursiveTree,
         LSystemDto? LSystem,
+        StrangeAttractorDto? StrangeAttractor,
         GradientDto? Gradient);
     private sealed record GraphDto(
         int? Version,
@@ -405,7 +424,7 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
         double? Strength = null,
         JsonElement? Payload = null);
 
-    private sealed record SnapshotV7Dto(
+    private sealed record SnapshotLayeredDto(
         int? FormatVersion,
         CanvasDto? Canvas,
         PresentationDto? Presentation,
@@ -443,6 +462,7 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
         MandelbrotDto? Mandelbrot,
         RecursiveTreeDto? RecursiveTree,
         LSystemDto? LSystem,
+        StrangeAttractorDto? StrangeAttractor,
         GradientDto? Gradient,
         ExplorationDto? Exploration);
 
@@ -488,6 +508,7 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
                     EncodeMandelbrot(fractal.Mandelbrot),
                     EncodeRecursiveTree(fractal.RecursiveTree),
                     EncodeLSystem(fractal.LSystem),
+                    EncodeStrangeAttractor(fractal.StrangeAttractor),
                     new GradientDto(fractal.Gradient.Start.ToHex(), fractal.Gradient.End.ToHex(), fractal.Gradient.Interior.ToHex()),
                     EncodeExploration(fractal.Exploration)),
                 null,
@@ -504,7 +525,7 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
         };
     }
 
-    private static ArtworkLayerDefinition DecodeLayer(LayerDto dto)
+    private static ArtworkLayerDefinition DecodeLayer(LayerDto dto, int sourceVersion)
     {
         if (string.IsNullOrWhiteSpace(dto.TypeId) || dto.Version is null || string.IsNullOrWhiteSpace(dto.Id) ||
             string.IsNullOrWhiteSpace(dto.Name) || dto.IsVisible is null || dto.Opacity is null ||
@@ -520,6 +541,7 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
             var fractal = dto.Fractal;
             if (fractal?.Seed is null || fractal.GeneratorKind is null || fractal.Julia is null ||
                 fractal.Mandelbrot is null || fractal.RecursiveTree is null || fractal.LSystem is null ||
+                sourceVersion >= 8 && !HasAllFields(fractal.StrangeAttractor) ||
                 fractal.Gradient is null || fractal.Exploration is null ||
                 string.IsNullOrWhiteSpace(fractal.Julia.CenterX) || string.IsNullOrWhiteSpace(fractal.Julia.CenterY) ||
                 string.IsNullOrWhiteSpace(fractal.Julia.Scale) || string.IsNullOrWhiteSpace(fractal.Julia.ConstantReal) ||
@@ -556,8 +578,11 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
                 DecodeMandelbrot(fractal.Mandelbrot),
                 DecodeRecursiveTree(fractal.RecursiveTree),
                 DecodeLSystem(fractal.LSystem),
+                sourceVersion >= 8
+                    ? DecodeStrangeAttractor(fractal.StrangeAttractor!)
+                    : ArtworkDefinition.CreateDefaultAttractor(),
                 new GradientDefinition(start, end, interior),
-                DecodeExploration(fractal.Exploration, ArtworkDefinition.CurrentFormatVersion));
+                DecodeExploration(fractal.Exploration, sourceVersion));
         }
 
         if (dto.TypeId == "group" && dto.Version == 1)
@@ -568,7 +593,7 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
             }
 
             var children = dto.Children.Select(child => DecodeLayer(child ??
-                throw new InvalidDataException($"分组 {dto.Name} 包含 null 子项。"))).ToArray();
+                throw new InvalidDataException($"分组 {dto.Name} 包含 null 子项。"), sourceVersion)).ToArray();
             if (children.Any(child => child is LayerGroupDefinition))
             {
                 throw new InvalidDataException($"分组 {dto.Name} 不能嵌套分组。");
@@ -703,6 +728,7 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
         EncodeMandelbrot(recipe.Mandelbrot),
         EncodeRecursiveTree(recipe.RecursiveTree),
         EncodeLSystem(recipe.LSystem),
+        EncodeStrangeAttractor(recipe.StrangeAttractor),
         new GradientDto(recipe.Gradient.Start.ToHex(), recipe.Gradient.End.ToHex(), recipe.Gradient.Interior.ToHex()));
 
     private static ArtworkExplorationDefinition DecodeExploration(ExplorationDto dto, int sourceVersion)
@@ -753,6 +779,7 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
             (!isVersion3 && (dto.GeneratorKind is null || dto.RecursiveTree is null || !HasAllFields(dto.RecursiveTree))) ||
             (supportsVersion5Fields && (dto.Mandelbrot is null || !HasAllFields(dto.Mandelbrot) ||
                 dto.LSystem is null || !HasAllFields(dto.LSystem))) ||
+            (sourceVersion >= 8 && !HasAllFields(dto.StrangeAttractor)) ||
             !RgbaColor.TryParse(dto.Gradient.Start, out var start) ||
             !RgbaColor.TryParse(dto.Gradient.End, out var end) ||
             !RgbaColor.TryParse(dto.Gradient.Interior, out var interior))
@@ -769,6 +796,9 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
             supportsVersion5Fields ? DecodeMandelbrot(dto.Mandelbrot!) : ArtworkDefinition.CreateDefault().Mandelbrot,
             isVersion3 ? ArtworkDefinition.CreateDefault().RecursiveTree : DecodeRecursiveTree(dto.RecursiveTree!),
             supportsVersion5Fields ? DecodeLSystem(dto.LSystem!) : ArtworkDefinition.CreateDefault().LSystem,
+            sourceVersion >= 8
+                ? DecodeStrangeAttractor(dto.StrangeAttractor!)
+                : ArtworkDefinition.CreateDefaultAttractor(),
             new GradientDefinition(start, end, interior));
     }
 
@@ -846,6 +876,40 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
         lSystem.LengthDecay!.Value,
         lSystem.StrokeWidth!.Value,
         lSystem.StrokeWidthDecay!.Value);
+
+    private static StrangeAttractorDto EncodeStrangeAttractor(StrangeAttractorDefinition definition) => new(
+        (int)definition.Formula,
+        definition.A,
+        definition.B,
+        definition.C,
+        definition.D,
+        definition.BurnInIterations,
+        definition.SampleCount,
+        definition.Exposure,
+        definition.Gamma,
+        definition.GlowEnabled,
+        definition.GlowSigma,
+        definition.GlowStrength);
+
+    private static bool HasAllFields(StrangeAttractorDto? definition) =>
+        definition?.Formula is not null && definition.A is not null && definition.B is not null &&
+        definition.C is not null && definition.D is not null && definition.BurnInIterations is not null &&
+        definition.SampleCount is not null && definition.Exposure is not null && definition.Gamma is not null &&
+        definition.GlowEnabled is not null && definition.GlowSigma is not null && definition.GlowStrength is not null;
+
+    private static StrangeAttractorDefinition DecodeStrangeAttractor(StrangeAttractorDto definition) => new(
+        (AttractorFormula)definition.Formula!.Value,
+        definition.A!.Value,
+        definition.B!.Value,
+        definition.C!.Value,
+        definition.D!.Value,
+        definition.BurnInIterations!.Value,
+        definition.SampleCount!.Value,
+        definition.Exposure!.Value,
+        definition.Gamma!.Value,
+        definition.GlowEnabled!.Value,
+        definition.GlowSigma!.Value,
+        definition.GlowStrength!.Value);
 
     private static GraphDto EncodeGraph(ArtworkGraphDefinition graph) => new(
         graph.Version,

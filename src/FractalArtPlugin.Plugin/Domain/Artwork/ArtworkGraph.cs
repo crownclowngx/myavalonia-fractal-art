@@ -9,7 +9,8 @@ public enum ArtworkGraphDataKind
     ScalarField = 0,
     PathGeometry = 1,
     ImageSurface = 2,
-    Mask = 3
+    Mask = 3,
+    PointCloud = 4
 }
 
 /// <summary>
@@ -26,7 +27,11 @@ public enum ArtworkGraphOperation
     PathStroke = 5,
     EffectChain = 6,
     SingleLayerComposition = 7,
-    Output = 8
+    Output = 8,
+    StrangeAttractorPoints = 9,
+    PointDensity = 10,
+    DensityGradient = 11,
+    DensityGlow = 12
 }
 
 public sealed record ArtworkGraphNodeDefinition(string Id, ArtworkGraphOperation Operation, int Version);
@@ -157,6 +162,31 @@ public static class ArtworkGraphFactory
 
     private static ArtworkGraphDefinition Create(FractalGeneratorKind generatorKind, string? prefix)
     {
+        string NodeId(string suffix) => prefix is null ? suffix : $"{prefix}-{suffix}";
+        if (generatorKind == FractalGeneratorKind.StrangeAttractor)
+        {
+            return new ArtworkGraphDefinition(
+                ArtworkGraphDefinition.CurrentVersion,
+                [
+                    new(NodeId("generator"), ArtworkGraphOperation.StrangeAttractorPoints, 1),
+                    new(NodeId("density"), ArtworkGraphOperation.PointDensity, 1),
+                    new(NodeId("color"), ArtworkGraphOperation.DensityGradient, 1),
+                    new(NodeId("glow"), ArtworkGraphOperation.DensityGlow, 1),
+                    new(NodeId("effects"), ArtworkGraphOperation.EffectChain, 1),
+                    new(NodeId("composition"), ArtworkGraphOperation.SingleLayerComposition, 1),
+                    new(NodeId("output"), ArtworkGraphOperation.Output, 1)
+                ],
+                [
+                    new(NodeId("generator"), "points", NodeId("density"), "source"),
+                    new(NodeId("density"), "field", NodeId("color"), "source"),
+                    new(NodeId("color"), "image", NodeId("glow"), "image"),
+                    new(NodeId("glow"), "image", NodeId("effects"), "image"),
+                    new(NodeId("effects"), "image", NodeId("composition"), "image"),
+                    new(NodeId("composition"), "image", NodeId("output"), "image")
+                ],
+                NodeId("output"));
+        }
+
         var (generator, colorizer) = generatorKind switch
         {
             FractalGeneratorKind.Julia => (ArtworkGraphOperation.JuliaField, ArtworkGraphOperation.ScalarGradient),
@@ -170,9 +200,7 @@ public static class ArtworkGraphFactory
             : "path";
 
         // 保留旧公开工厂的 generator/color 等节点 ID，供 v6 图验证与迁移使用；
-        // v7 每层图则加稳定层 ID 前缀，避免多个生成器共享一个 Document 缓存时发生键冲突。
-        string NodeId(string suffix) => prefix is null ? suffix : $"{prefix}-{suffix}";
-
+        // v7 起每层图都加稳定层 ID 前缀，避免多个生成器共享一个 Document 缓存时发生键冲突。
         return new ArtworkGraphDefinition(
             ArtworkGraphDefinition.CurrentVersion,
             [

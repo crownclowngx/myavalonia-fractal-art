@@ -129,6 +129,7 @@ internal sealed class ArtworkValidator : IArtworkValidator, IArtworkRenderabilit
             ValidateMandelbrot(layer.Mandelbrot);
             ValidateRecursiveTree(layer.RecursiveTree);
             _lSystemValidator.Validate(layer.LSystem);
+            ValidateStrangeAttractor(layer.StrangeAttractor);
             ValidateExploration(layer.Exploration);
             _graphValidator.ValidateAndSort(
                 ArtworkGraphFactory.Create(layer), layer.GeneratorKind, EffectChainDefinition.Empty);
@@ -148,7 +149,8 @@ internal sealed class ArtworkValidator : IArtworkValidator, IArtworkRenderabilit
                 throw new InvalidDataException($"图层 {layer.Name} 不能引用自身作为遮罩。");
             }
 
-            if (source.GeneratorKind is not (FractalGeneratorKind.Julia or FractalGeneratorKind.Mandelbrot))
+            if (source.GeneratorKind is not (FractalGeneratorKind.Julia or FractalGeneratorKind.Mandelbrot or
+                FractalGeneratorKind.StrangeAttractor))
             {
                 throw new InvalidDataException($"图层 {layer.Name} 的遮罩源 {source.Name} 不产生 ScalarField。");
             }
@@ -183,6 +185,19 @@ internal sealed class ArtworkValidator : IArtworkValidator, IArtworkRenderabilit
         if (finalWorkPixels > 64L * 1024 * 1024)
         {
             throw new InvalidDataException("可见图层与遮罩源的最终像素工作量不能超过 64M。");
+        }
+
+        var requiredAttractors = fractals
+            .Where(layer => requiredIds.Contains(layer.Id) && layer.GeneratorKind == FractalGeneratorKind.StrangeAttractor)
+            .ToArray();
+        if (requiredAttractors.Length > 0 && (long)artwork.Canvas.Width * artwork.Canvas.Height > 16_777_216)
+        {
+            throw new InvalidDataException("需要计算吸引子密度时，画布不能超过 16,777,216 像素。");
+        }
+
+        if (requiredAttractors.Sum(layer => (long)layer.StrangeAttractor.SampleCount) > 4_000_000)
+        {
+            throw new InvalidDataException("一次最终求值所需的吸引子采样总量不能超过 4,000,000 点。");
         }
     }
 
@@ -347,6 +362,23 @@ internal sealed class ArtworkValidator : IArtworkValidator, IArtworkRenderabilit
         }
     }
 
+    private static void ValidateStrangeAttractor(StrangeAttractorDefinition definition)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        if (!Enum.IsDefined(definition.Formula) ||
+            !IsFiniteInRange(definition.A, -4, 4) || !IsFiniteInRange(definition.B, -4, 4) ||
+            !IsFiniteInRange(definition.C, -4, 4) || !IsFiniteInRange(definition.D, -4, 4) ||
+            definition.BurnInIterations is < 16 or > 4096 ||
+            definition.SampleCount is < 10_000 or > 2_000_000 ||
+            !IsFiniteInRange(definition.Exposure, 0.1, 32) ||
+            !IsFiniteInRange(definition.Gamma, 0.2, 4) ||
+            !IsFiniteInRange(definition.GlowSigma, 0.5, 10) ||
+            !IsFiniteInRange(definition.GlowStrength, 0, 4))
+        {
+            throw new InvalidDataException("奇异吸引子的公式、参数、采样、曝光、Gamma 或局部发光超出安全预算。");
+        }
+    }
+
     /// <summary>
     /// 候选和收藏会随外部作品文件进入渲染管线，因此这里逐项验证真实配方、数量、身份与枚举范围。
     /// 任何一项失败都会阻止整个快照发布，不能让部分非法候选潜伏到稍后的点击操作。
@@ -405,6 +437,7 @@ internal sealed class ArtworkValidator : IArtworkValidator, IArtworkRenderabilit
         ValidateMandelbrot(recipe.Mandelbrot);
         ValidateRecursiveTree(recipe.RecursiveTree);
         _lSystemValidator.Validate(recipe.LSystem);
+        ValidateStrangeAttractor(recipe.StrangeAttractor);
     }
 
     private static bool IsValidIdentity(string? value) =>
@@ -413,4 +446,7 @@ internal sealed class ArtworkValidator : IArtworkValidator, IArtworkRenderabilit
 
     private static bool IsRepresentable(ArbitraryDecimal value, int precisionDigits, int minimumExponent) =>
         value.IsZero || (value.SignificantDigits <= precisionDigits && value.Exponent >= minimumExponent);
+
+    private static bool IsFiniteInRange(double value, double minimum, double maximum) =>
+        double.IsFinite(value) && value >= minimum && value <= maximum;
 }

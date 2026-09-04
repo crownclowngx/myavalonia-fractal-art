@@ -56,3 +56,34 @@ public interface IPathStrokeRenderer
         RenderContext context,
         CancellationToken cancellationToken);
 }
+
+public interface IAttractorPointCloudGenerator
+{
+    Task<PointCloud> GenerateAsync(
+        StrangeAttractorDefinition definition,
+        long seed,
+        RenderContext context,
+        CancellationToken cancellationToken);
+}
+
+public interface IPointDensityRenderer
+{
+    Task<ScalarField> RenderAsync(
+        PointCloud cloud,
+        StrangeAttractorDefinition definition,
+        RenderContext context,
+        CancellationToken cancellationToken);
+}
+
+public interface IDensityGradientMapper
+{
+    ImageSurface Map(ScalarField field, GradientDefinition gradient, CancellationToken cancellationToken);
+}
+
+public interface IDensityGlowRenderer
+{
+    ImageSurface Apply(
+        ImageSurface source,
+        StrangeAttractorDefinition definition,
+        CancellationToken cancellationToken);
+}

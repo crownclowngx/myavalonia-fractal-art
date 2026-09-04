@@ -1,6 +1,6 @@
 # FractalArtPlugin
 
-这是 `myavalonia.plugin.fractal.art` 的 Managed Plugin 解决方案。当前已完成 G0001–G0008 的代码实施：
+这是 `myavalonia.plugin.fractal.art` 的 Managed Plugin 解决方案。当前已完成 G0001–G0009 的代码实施：
 产品化插件壳、可持久化空作品闭环，以及 Julia → 标量场 → 线性渐变 → 预览/PNG 导出的首条纵向切片。
 画布支持鼠标拖动平移和以指针为锚点的滚轮缩放；Julia 配方使用高精度十进制文本持久化，并在深缩放时
 自动切换到 32–1024 位可配置的任意精度定点内核。
@@ -13,7 +13,9 @@ G0007 增加 Fractal Provider + Consumer 双角色、文件式 ImageLab 后处�
 编排的 Render/Release Action；大型图像只经文件系统传递，不修改 Workflow JSON 协议。
 G0008 增加最多 8 个分形层、4 个单层组、跨分形 ScalarField 遮罩、完整二维变换、五种混合模式，以及
 进入作品历史与保存的实时 Tone/Bloom Master Effects。
-作品格式现为 v7，并显式迁移 v1–v6。
+作品格式现为 v8，并显式迁移 v1–v7。
+G0009 新增 Clifford/De Jong 奇异吸引子、不可变点云、确定性密度累积、透明密度渐变、图层局部发光，
+并允许吸引子密度作为其它图层或组的遮罩源。
 真实交付物是 `src/FractalArtPlugin.Plugin`；`Standalone` 只负责快速预览同一份 View、Document 与业务服务。
 
 > 第一次开始开发前，请先阅读 [项目文档与快速开始](docs/README.md)。其中说明了三个子项目和
@@ -37,5 +39,5 @@ dotnet msbuild src/FractalArtPlugin.Plugin/FractalArtPlugin.Plugin.csproj `
 Standalone 只能验证界面和插件自身对象图；manifest、加载上下文、Document Scope、Dock、Tool 和
 生命周期必须使用真实 Host 做最终验收。
 
-首版保持零 Tool、零 Workbench Command、零默认快捷键。G0001–G0008 的计划、实施方案、结果与门禁证据见
+首版保持零 Tool、零 Workbench Command、零默认快捷键。G0001–G0009 的计划、实施方案、结果与门禁证据见
 [重构实施档案](docs/refactoring/README.md)。

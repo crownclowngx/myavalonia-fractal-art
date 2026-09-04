@@ -9,6 +9,8 @@ internal sealed record ImageSurfaceGraphValue(ImageSurface Value)
     : ArtworkGraphValue(ArtworkGraphDataKind.ImageSurface, Value.EstimatedByteSize);
 internal sealed record MaskGraphValue(Mask Value)
     : ArtworkGraphValue(ArtworkGraphDataKind.Mask, Value.EstimatedByteSize);
+internal sealed record PointCloudGraphValue(PointCloud Value)
+    : ArtworkGraphValue(ArtworkGraphDataKind.PointCloud, Value.EstimatedByteSize);
 
 internal interface IArtworkGraphNodeExecutor
 {
@@ -74,6 +76,68 @@ internal sealed class LSystemPathNodeExecutor(
         var symbols = expander.Expand(artwork.LSystem, cancellationToken);
         return Task.FromResult<ArtworkGraphValue>(
             new PathGeometryGraphValue(interpreter.Interpret(artwork.LSystem, symbols, cancellationToken)));
+    }
+}
+
+internal sealed class StrangeAttractorPointsNodeExecutor(IAttractorPointCloudGenerator generator)
+    : IArtworkGraphNodeExecutor
+{
+    public ArtworkGraphOperation Operation => ArtworkGraphOperation.StrangeAttractorPoints;
+
+    public async Task<ArtworkGraphValue> ExecuteAsync(
+        ArtworkDefinition artwork,
+        RenderContext context,
+        IReadOnlyDictionary<string, ArtworkGraphValue> inputs,
+        CancellationToken cancellationToken) =>
+        new PointCloudGraphValue(await generator.GenerateAsync(
+            artwork.StrangeAttractor, artwork.Seed, context, cancellationToken).ConfigureAwait(false));
+}
+
+internal sealed class PointDensityNodeExecutor(IPointDensityRenderer renderer) : IArtworkGraphNodeExecutor
+{
+    public ArtworkGraphOperation Operation => ArtworkGraphOperation.PointDensity;
+
+    public async Task<ArtworkGraphValue> ExecuteAsync(
+        ArtworkDefinition artwork,
+        RenderContext context,
+        IReadOnlyDictionary<string, ArtworkGraphValue> inputs,
+        CancellationToken cancellationToken)
+    {
+        var cloud = ArtworkGraphNodeInput.GetInput<PointCloudGraphValue>(inputs, "source", Operation).Value;
+        return new ScalarFieldGraphValue(await renderer.RenderAsync(
+            cloud, artwork.StrangeAttractor, context, cancellationToken).ConfigureAwait(false));
+    }
+}
+
+internal sealed class DensityGradientNodeExecutor(IDensityGradientMapper mapper) : IArtworkGraphNodeExecutor
+{
+    public ArtworkGraphOperation Operation => ArtworkGraphOperation.DensityGradient;
+
+    public Task<ArtworkGraphValue> ExecuteAsync(
+        ArtworkDefinition artwork,
+        RenderContext context,
+        IReadOnlyDictionary<string, ArtworkGraphValue> inputs,
+        CancellationToken cancellationToken)
+    {
+        var field = ArtworkGraphNodeInput.GetInput<ScalarFieldGraphValue>(inputs, "source", Operation).Value;
+        return Task.FromResult<ArtworkGraphValue>(
+            new ImageSurfaceGraphValue(mapper.Map(field, artwork.Gradient, cancellationToken)));
+    }
+}
+
+internal sealed class DensityGlowNodeExecutor(IDensityGlowRenderer renderer) : IArtworkGraphNodeExecutor
+{
+    public ArtworkGraphOperation Operation => ArtworkGraphOperation.DensityGlow;
+
+    public Task<ArtworkGraphValue> ExecuteAsync(
+        ArtworkDefinition artwork,
+        RenderContext context,
+        IReadOnlyDictionary<string, ArtworkGraphValue> inputs,
+        CancellationToken cancellationToken)
+    {
+        var image = ArtworkGraphNodeInput.GetInput<ImageSurfaceGraphValue>(inputs, "image", Operation).Value;
+        return Task.FromResult<ArtworkGraphValue>(
+            new ImageSurfaceGraphValue(renderer.Apply(image, artwork.StrangeAttractor, cancellationToken)));
     }
 }
 

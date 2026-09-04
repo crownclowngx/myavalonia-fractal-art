@@ -112,6 +112,12 @@ internal sealed class VariationGenerator(IArtworkValidator validator) : IVariati
         new("tree.randomness", "随机度", VariationLockGroups.Shape, 0, 1, 0.01, MutationDistribution.Uniform),
         new("lsystem.iterations", "L-System 迭代层级", VariationLockGroups.Shape, 0, 12, 1, MutationDistribution.Discrete),
         new("lsystem.angle", "L-System 转角", VariationLockGroups.Shape, 1, 360, 0.5, MutationDistribution.Uniform),
+        new("attractor.a", "吸引子 A", VariationLockGroups.Shape, -4, 4, 0.01, MutationDistribution.Uniform),
+        new("attractor.b", "吸引子 B", VariationLockGroups.Shape, -4, 4, 0.01, MutationDistribution.Uniform),
+        new("attractor.c", "吸引子 C", VariationLockGroups.Shape, -4, 4, 0.01, MutationDistribution.Uniform),
+        new("attractor.d", "吸引子 D", VariationLockGroups.Shape, -4, 4, 0.01, MutationDistribution.Uniform),
+        new("attractor.exposure", "密度曝光", VariationLockGroups.Color, 0.1, 32, 0.1, MutationDistribution.Logarithmic),
+        new("attractor.gamma", "密度 Gamma", VariationLockGroups.Color, 0.2, 4, 0.05, MutationDistribution.Uniform),
         new("gradient.rgb", "调色板", VariationLockGroups.Color, 0, 255, 1, MutationDistribution.Discrete),
         new("seed", "Seed", VariationLockGroups.Seed, long.MinValue, long.MaxValue, 1, MutationDistribution.Discrete)
     ];
@@ -175,10 +181,12 @@ internal sealed class VariationGenerator(IArtworkValidator validator) : IVariati
         var mandelbrot = source.Mandelbrot;
         var recursiveTree = source.RecursiveTree;
         var lSystem = source.LSystem;
+        var attractor = source.StrangeAttractor;
         var gradient = source.Gradient;
         var seed = source.Seed;
 
-        if (source.GeneratorKind is FractalGeneratorKind.Julia or FractalGeneratorKind.RecursiveTree &&
+        if (source.GeneratorKind is FractalGeneratorKind.Julia or FractalGeneratorKind.RecursiveTree or
+            FractalGeneratorKind.StrangeAttractor &&
             !locks.HasFlag(VariationLockGroups.Seed))
         {
             seed = unchecked((long)random.NextUInt64());
@@ -213,11 +221,19 @@ internal sealed class VariationGenerator(IArtworkValidator validator) : IVariati
             {
                 lSystem = MutateLSystem(lSystem, strength, ref random);
             }
+            else if (source.GeneratorKind == FractalGeneratorKind.StrangeAttractor)
+            {
+                attractor = MutateAttractorShape(attractor, strength, ref random);
+            }
         }
 
         if (mutateColor && !locks.HasFlag(VariationLockGroups.Color))
         {
             gradient = MutateGradient(gradient, strength, ref random);
+            if (source.GeneratorKind == FractalGeneratorKind.StrangeAttractor)
+            {
+                attractor = MutateAttractorTexture(attractor, strength, ref random);
+            }
         }
 
         return new VariationRecipeDefinition(
@@ -227,8 +243,32 @@ internal sealed class VariationGenerator(IArtworkValidator validator) : IVariati
             mandelbrot,
             recursiveTree,
             lSystem,
+            attractor,
             gradient);
     }
+
+    private static StrangeAttractorDefinition MutateAttractorShape(
+        StrangeAttractorDefinition attractor,
+        double strength,
+        ref StableRandom random) => attractor with
+        {
+            // 公式、预热和采样预算保持不变；候选只改变可视形态，避免一次变体造成不可预期的性能跳变。
+            A = Math.Clamp(attractor.A + random.NextSigned() * strength * 1.2, -4, 4),
+            B = Math.Clamp(attractor.B + random.NextSigned() * strength * 1.2, -4, 4),
+            C = Math.Clamp(attractor.C + random.NextSigned() * strength * 1.2, -4, 4),
+            D = Math.Clamp(attractor.D + random.NextSigned() * strength * 1.2, -4, 4)
+        };
+
+    private static StrangeAttractorDefinition MutateAttractorTexture(
+        StrangeAttractorDefinition attractor,
+        double strength,
+        ref StableRandom random) => attractor with
+        {
+            Exposure = Math.Clamp(attractor.Exposure * Math.Exp(random.NextSigned() * strength * 0.8), 0.1, 32),
+            Gamma = Math.Clamp(attractor.Gamma + random.NextSigned() * strength * 0.8, 0.2, 4),
+            GlowSigma = Math.Clamp(attractor.GlowSigma + random.NextSigned() * strength * 2, 0.5, 10),
+            GlowStrength = Math.Clamp(attractor.GlowStrength + random.NextSigned() * strength, 0, 4)
+        };
 
     private static MandelbrotDefinition MutateComposition(
         MandelbrotDefinition mandelbrot,
@@ -392,7 +432,8 @@ public sealed record ArtworkPresetDefinition(
     RecursiveTreeDefinition RecursiveTree,
     GradientDefinition Gradient,
     MandelbrotDefinition? Mandelbrot = null,
-    LSystemDefinition? LSystem = null);
+    LSystemDefinition? LSystem = null,
+    StrangeAttractorDefinition? StrangeAttractor = null);
 
 public sealed record PalettePresetDefinition(string Id, string Name, GradientDefinition Gradient);
 
@@ -451,7 +492,15 @@ internal sealed class ArtworkPresetCatalog : IArtworkPresetCatalog
         CreateLSystemPreset("lsystem-plant", "经典分形植物", "X",
             [new('X', "F+[[X]-X]-F[-FX]+X"), new('F', "FF")], 5, 25, -90),
         CreateLSystemPreset("lsystem-hilbert", "Hilbert 曲线", "A",
-            [new('A', "-BF+AFA+FB-"), new('B', "+AF-BFB-FA+")], 5, 90, 0)
+            [new('A', "-BF+AFA+FB-"), new('B', "+AF-BFB-FA+")], 5, 90, 0),
+        CreateAttractorPreset("attractor-aurora", "极光织网", AttractorFormula.Clifford, -1.4, 1.6, 1.0, 0.7,
+            new GradientDefinition(new(24, 47, 89, 0), new(146, 240, 255), new(0, 0, 0, 0))),
+        CreateAttractorPreset("attractor-silk", "丝绸星云", AttractorFormula.Clifford, -1.7, 1.8, -0.9, -0.4,
+            new GradientDefinition(new(40, 18, 82, 0), new(255, 116, 205), new(0, 0, 0, 0))),
+        CreateAttractorPreset("attractor-stardust", "星尘花冠", AttractorFormula.DeJong, 1.4, -2.3, 2.4, -2.1,
+            new GradientDefinition(new(15, 52, 88, 0), new(255, 218, 122), new(0, 0, 0, 0))),
+        CreateAttractorPreset("attractor-abyss", "深海回环", AttractorFormula.DeJong, -2, -2, -1.2, 2,
+            new GradientDefinition(new(3, 34, 68, 0), new(83, 241, 213), new(0, 0, 0, 0)))
     ];
 
     public IReadOnlyList<PalettePresetDefinition> PalettePresets { get; } =
@@ -471,6 +520,7 @@ internal sealed class ArtworkPresetCatalog : IArtworkPresetCatalog
             Mandelbrot = preset.Mandelbrot ?? artwork.Mandelbrot,
             RecursiveTree = preset.RecursiveTree,
             LSystem = preset.LSystem ?? artwork.LSystem,
+            StrangeAttractor = preset.StrangeAttractor ?? artwork.StrangeAttractor,
             Gradient = preset.Gradient
         };
     }
@@ -499,4 +549,24 @@ internal sealed class ArtworkPresetCatalog : IArtworkPresetCatalog
             new GradientDefinition(new(24, 47, 43), new(126, 239, 153), new(3, 10, 12)),
             ArtworkDefinition.CreateDefault().Mandelbrot,
             new LSystemDefinition(axiom, rules, iterations, angle, heading, 0.02, 1, 2.8, 0.9));
+
+    private static ArtworkPresetDefinition CreateAttractorPreset(
+        string id,
+        string name,
+        AttractorFormula formula,
+        double a,
+        double b,
+        double c,
+        double d,
+        GradientDefinition gradient) => new(
+            id,
+            name,
+            "星云与粒子",
+            FractalGeneratorKind.StrangeAttractor,
+            ArtworkDefinition.CreateDefault().Julia,
+            ArtworkDefinition.CreateDefault().RecursiveTree,
+            gradient,
+            ArtworkDefinition.CreateDefault().Mandelbrot,
+            ArtworkDefinition.CreateDefault().LSystem,
+            ArtworkDefinition.CreateDefaultAttractor() with { Formula = formula, A = a, B = b, C = c, D = d });
 }

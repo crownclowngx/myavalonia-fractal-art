@@ -44,6 +44,11 @@ public sealed record RenderContext(
     public int ChunkHeight { get; init; } = 8;
     public int CancellationCheckInterval { get; init; } = 64;
     public JuliaKernelPreference KernelPreference { get; init; } = JuliaKernelPreference.Automatic;
+    /// <summary>
+    /// 当前调用允许吸引子实际生成的最大点数。它由预览质量决定并进入节点缓存键，但不写回作品，
+    /// 因而最终采样配方不会因为机器或窗口状态不同而漂移。
+    /// </summary>
+    public int PointSampleBudget { get; init; } = int.MaxValue;
 
     public static RenderContext ForPreview(ArtworkDefinition artwork) => Create(artwork, RenderQuality.Draft);
 
@@ -119,7 +124,13 @@ public sealed record RenderContext(
         {
             ConfiguredPrecisionDigits = descriptor.ConfiguredDigits,
             EffectivePrecisionDigits = descriptor.EffectiveDigits,
-            PrecisionReason = descriptor.Reason
+            PrecisionReason = descriptor.Reason,
+            PointSampleBudget = artwork.GeneratorKind == FractalGeneratorKind.StrangeAttractor
+                ? quality == RenderQuality.Final
+                    ? artwork.StrangeAttractor.SampleCount
+                    : Math.Min(artwork.StrangeAttractor.SampleCount,
+                        artwork.Presentation.HighQualityPreview ? 400_000 : 100_000)
+                : int.MaxValue
         };
     }
 

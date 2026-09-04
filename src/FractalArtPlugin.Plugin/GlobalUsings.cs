@@ -3,6 +3,7 @@ global using FractalArtPlugin.Domain.Fractals.Julia;
 global using FractalArtPlugin.Domain.Fractals.Mandelbrot;
 global using FractalArtPlugin.Domain.Fractals.LSystem;
 global using FractalArtPlugin.Domain.Fractals.RecursiveTree;
+global using FractalArtPlugin.Domain.Fractals.Attractor;
 global using FractalArtPlugin.Domain.Rendering;
 global using FractalArtPlugin.Domain.Viewport;
 global using FractalArtPlugin.Numerics;

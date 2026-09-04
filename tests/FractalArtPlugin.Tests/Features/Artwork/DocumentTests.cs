@@ -10,6 +10,29 @@ namespace FractalArtPlugin.Tests;
 public sealed class DocumentTests
 {
     [Fact]
+    public async Task 吸引子图层参数预设与撤销进入同一Document历史()
+    {
+        using var fixture = new DocumentFixture();
+        using var document = fixture.CreateDocument();
+        await document.InitializeAsync(new NewDocumentActivation("吸引子编辑"), CancellationToken.None);
+
+        document.AddLayerCommand.Execute("StrangeAttractor");
+        Assert.True(document.IsAttractorGenerator);
+        Assert.Equal(FractalGeneratorKind.StrangeAttractor, document.Artwork.GeneratorKind);
+        Assert.True(document.IsSeedControlVisible);
+
+        document.ApplyArtworkPresetCommand.Execute("attractor-stardust");
+        Assert.Equal(AttractorFormula.DeJong, document.Artwork.StrangeAttractor.Formula);
+        Assert.Equal(1.4, document.AttractorA, 12);
+        document.AttractorExposure = 2.5;
+        Assert.Equal(2.5, document.Artwork.StrangeAttractor.Exposure, 12);
+
+        document.UndoCommand.Execute(null);
+        Assert.NotEqual(2.5, document.Artwork.StrangeAttractor.Exposure);
+        Assert.True(document.IsDirty);
+    }
+
+    [Fact]
     public async Task ImageLab导出参数不影响Dirty历史或ArtworkSnapshot()
     {
         using var fixture = new DocumentFixture();

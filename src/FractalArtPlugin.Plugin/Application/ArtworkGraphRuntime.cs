@@ -305,8 +305,8 @@ internal sealed class ArtworkGraphExecutor : IArtworkGraphExecutor
     }
 
     /// <summary>
-    /// 遮罩只求值生成节点，并与完整图使用完全相同的节点键和 Document Scope 缓存。
-    /// 隐藏遮罩源因此不会额外执行着色、效果和合成节点；稍后恢复可见时又能直接复用标量场。
+    /// 遮罩只求值到规范图中唯一的 ScalarField 生产节点，并与完整图使用完全相同的节点键和 Scope 缓存。
+    /// 逃逸时间生成器只需一个节点；吸引子需要先生成点云再累积密度，但都会跳过着色、局部发光和合成。
     /// </summary>
     public async Task<(ScalarField Field, ArtworkRenderExecutionSummary Execution)> ExecuteScalarAsync(
         ArtworkDefinition artwork,
@@ -314,46 +314,84 @@ internal sealed class ArtworkGraphExecutor : IArtworkGraphExecutor
         CancellationToken cancellationToken)
     {
         var graph = artwork.Graph;
-        var generatorNode = _validator.ValidateAndSort(graph, artwork.GeneratorKind, EffectChainDefinition.Empty)
-            .Single(node => node.Operation is ArtworkGraphOperation.JuliaField or ArtworkGraphOperation.MandelbrotField);
-        cancellationToken.ThrowIfCancellationRequested();
-        var key = ArtworkGraphCacheKeyFactory.Create(graph.Version, generatorNode, artwork, context,
-            new Dictionary<string, ArtworkNodeCacheKey>());
-        if (_cache.TryGet(key, out var cached) && cached is ScalarFieldGraphValue cachedField)
-        {
-            return (cachedField.Value, new ArtworkRenderExecutionSummary([generatorNode.Id], [], 1));
-        }
+        var ordered = _validator.ValidateAndSort(graph, artwork.GeneratorKind, EffectChainDefinition.Empty);
+        var scalarNode = ordered.Single(node =>
+            ArtworkGraphValidator.GetDescriptor(node.Operation).Output.DataKind == ArtworkGraphDataKind.ScalarField);
+        var values = new Dictionary<string, ArtworkGraphValue>(StringComparer.Ordinal);
+        var keys = new Dictionary<string, ArtworkNodeCacheKey>(StringComparer.Ordinal);
+        var cacheHits = new List<string>();
+        var executed = new List<string>();
+        var cacheableCount = 0;
 
-        var executor = _executors[generatorNode.Operation];
-        ArtworkGraphValue value;
-        try
+        foreach (var node in ordered)
         {
-            value = await executor.ExecuteAsync(
-                artwork, context, new Dictionary<string, ArtworkGraphValue>(), cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception exception)
-        {
-            throw new ArtworkGraphExecutionException(generatorNode.Id, generatorNode.Operation, exception);
+            var inputs = new Dictionary<string, ArtworkGraphValue>(StringComparer.Ordinal);
+            var inputKeys = new Dictionary<string, ArtworkNodeCacheKey>(StringComparer.Ordinal);
+            foreach (var connection in graph.Connections.Where(connection => connection.TargetNodeId == node.Id))
+            {
+                inputs.Add(connection.TargetPort, values[connection.SourceNodeId]);
+                inputKeys.Add(connection.TargetPort, keys[connection.SourceNodeId]);
+            }
+
+            var key = ArtworkGraphCacheKeyFactory.Create(graph.Version, node, artwork, context, inputKeys);
+            keys.Add(node.Id, key);
+            if (IsCacheable(node.Operation))
+            {
+                cacheableCount++;
+                if (_cache.TryGet(key, out var cached))
+                {
+                    values.Add(node.Id, cached);
+                    cacheHits.Add(node.Id);
+                    if (node.Id == scalarNode.Id && cached is ScalarFieldGraphValue cachedField)
+                    {
+                        return (cachedField.Value,
+                            new ArtworkRenderExecutionSummary(cacheHits, executed, cacheableCount));
+                    }
+
+                    continue;
+                }
+            }
+
+            ArtworkGraphValue value;
+            try
+            {
+                value = await _executors[node.Operation]
+                    .ExecuteAsync(artwork, context, inputs, cancellationToken).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                throw new ArtworkGraphExecutionException(node.Id, node.Operation, exception);
+            }
+
+            values.Add(node.Id, value);
+            executed.Add(node.Id);
+            if (IsCacheable(node.Operation)) _cache.Set(key, value);
+            if (node.Id == scalarNode.Id)
+            {
+                if (value is not ScalarFieldGraphValue field)
+                {
+                    throw new InvalidOperationException($"节点 {node.Id} 没有产生 ScalarField。");
+                }
+
+                return (field.Value, new ArtworkRenderExecutionSummary(cacheHits, executed, cacheableCount));
+            }
         }
 
-        if (value is not ScalarFieldGraphValue field)
-        {
-            throw new InvalidOperationException($"节点 {generatorNode.Id} 没有产生 ScalarField。");
-        }
-
-        _cache.Set(key, value);
-        return (field.Value, new ArtworkRenderExecutionSummary([], [generatorNode.Id], 1));
+        throw new InvalidOperationException("创作图没有产生可供遮罩使用的 ScalarField。");
     }
 
     private static bool IsCacheable(ArtworkGraphOperation operation) => operation is
         ArtworkGraphOperation.JuliaField or ArtworkGraphOperation.MandelbrotField or
         ArtworkGraphOperation.RecursiveTreePath or ArtworkGraphOperation.LSystemPath or
-        ArtworkGraphOperation.ScalarGradient or ArtworkGraphOperation.PathStroke;
+        ArtworkGraphOperation.ScalarGradient or ArtworkGraphOperation.PathStroke or
+        ArtworkGraphOperation.StrangeAttractorPoints or ArtworkGraphOperation.PointDensity or
+        ArtworkGraphOperation.DensityGradient or ArtworkGraphOperation.DensityGlow;
 
     private static void ReleaseConsumedInputs(
         ArtworkGraphDefinition graph,
@@ -415,8 +453,27 @@ internal static class ArtworkGraphCacheKeyFactory
             case ArtworkGraphOperation.LSystemPath:
                 WriteLSystem(writer, artwork.LSystem);
                 break;
+            case ArtworkGraphOperation.StrangeAttractorPoints:
+                WriteAttractorFormula(writer, artwork.StrangeAttractor);
+                writer.Write(artwork.Seed);
+                writer.Write(context.PointSampleBudget);
+                break;
+            case ArtworkGraphOperation.PointDensity:
+                writer.Write(context.Width);
+                writer.Write(context.Height);
+                writer.Write(artwork.StrangeAttractor.Exposure);
+                writer.Write(artwork.StrangeAttractor.Gamma);
+                break;
             case ArtworkGraphOperation.ScalarGradient:
                 WriteGradient(writer, artwork.Gradient);
+                break;
+            case ArtworkGraphOperation.DensityGradient:
+                WriteGradient(writer, artwork.Gradient);
+                break;
+            case ArtworkGraphOperation.DensityGlow:
+                writer.Write(artwork.StrangeAttractor.GlowEnabled);
+                writer.Write(artwork.StrangeAttractor.GlowSigma);
+                writer.Write(artwork.StrangeAttractor.GlowStrength);
                 break;
             case ArtworkGraphOperation.PathStroke:
                 WriteGradient(writer, artwork.Gradient);
@@ -517,6 +574,17 @@ internal static class ArtworkGraphCacheKeyFactory
         writer.Write(value.InitialHeadingDegrees);
         writer.Write(value.StepLength);
         writer.Write(value.LengthDecay);
+    }
+
+    private static void WriteAttractorFormula(BinaryWriter writer, StrangeAttractorDefinition value)
+    {
+        writer.Write((int)value.Formula);
+        writer.Write(value.A);
+        writer.Write(value.B);
+        writer.Write(value.C);
+        writer.Write(value.D);
+        writer.Write(value.BurnInIterations);
+        writer.Write(value.SampleCount);
     }
 
     private static void WriteGradient(BinaryWriter writer, GradientDefinition value)

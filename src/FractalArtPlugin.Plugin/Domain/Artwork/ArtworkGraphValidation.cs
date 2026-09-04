@@ -113,6 +113,7 @@ internal sealed class ArtworkGraphValidator : IArtworkGraphValidator
             FractalGeneratorKind.Mandelbrot => ArtworkGraphOperation.MandelbrotField,
             FractalGeneratorKind.RecursiveTree => ArtworkGraphOperation.RecursiveTreePath,
             FractalGeneratorKind.LSystem => ArtworkGraphOperation.LSystemPath,
+            FractalGeneratorKind.StrangeAttractor => ArtworkGraphOperation.StrangeAttractorPoints,
             _ => (ArtworkGraphOperation)(-1)
         };
         var generatorNodes = nodes.Values.Where(item => IsGenerator(item.Operation)).ToArray();
@@ -258,7 +259,8 @@ internal sealed class ArtworkGraphValidator : IArtworkGraphValidator
 
     private static bool IsGenerator(ArtworkGraphOperation operation) => operation is
         ArtworkGraphOperation.JuliaField or ArtworkGraphOperation.MandelbrotField or
-        ArtworkGraphOperation.RecursiveTreePath or ArtworkGraphOperation.LSystemPath;
+        ArtworkGraphOperation.RecursiveTreePath or ArtworkGraphOperation.LSystemPath or
+        ArtworkGraphOperation.StrangeAttractorPoints;
 
     private static bool IsValidId(string? value) =>
         !string.IsNullOrWhiteSpace(value) && value.Length <= 64 &&
@@ -286,7 +288,15 @@ internal sealed class ArtworkGraphValidator : IArtworkGraphValidator
             [ArtworkGraphOperation.MandelbrotField] = Source(ArtworkGraphOperation.MandelbrotField, "field", ArtworkGraphDataKind.ScalarField),
             [ArtworkGraphOperation.RecursiveTreePath] = Source(ArtworkGraphOperation.RecursiveTreePath, "path", ArtworkGraphDataKind.PathGeometry),
             [ArtworkGraphOperation.LSystemPath] = Source(ArtworkGraphOperation.LSystemPath, "path", ArtworkGraphDataKind.PathGeometry),
+            [ArtworkGraphOperation.StrangeAttractorPoints] = Source(ArtworkGraphOperation.StrangeAttractorPoints, "points", ArtworkGraphDataKind.PointCloud),
+            [ArtworkGraphOperation.PointDensity] = new(
+                ArtworkGraphOperation.PointDensity,
+                1,
+                [new("source", ArtworkGraphDataKind.PointCloud)],
+                new("field", ArtworkGraphDataKind.ScalarField)),
             [ArtworkGraphOperation.ScalarGradient] = Transform(ArtworkGraphOperation.ScalarGradient, ArtworkGraphDataKind.ScalarField, ArtworkGraphDataKind.ImageSurface),
+            [ArtworkGraphOperation.DensityGradient] = Transform(ArtworkGraphOperation.DensityGradient, ArtworkGraphDataKind.ScalarField, ArtworkGraphDataKind.ImageSurface),
+            [ArtworkGraphOperation.DensityGlow] = ImageTransform(ArtworkGraphOperation.DensityGlow),
             [ArtworkGraphOperation.PathStroke] = Transform(ArtworkGraphOperation.PathStroke, ArtworkGraphDataKind.PathGeometry, ArtworkGraphDataKind.ImageSurface),
             [ArtworkGraphOperation.EffectChain] = ImageTransform(ArtworkGraphOperation.EffectChain),
             [ArtworkGraphOperation.SingleLayerComposition] = ImageTransform(ArtworkGraphOperation.SingleLayerComposition),

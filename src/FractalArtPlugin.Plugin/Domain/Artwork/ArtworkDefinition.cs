@@ -55,14 +55,44 @@ public enum FractalGeneratorKind
     Julia = 0,
     RecursiveTree = 1,
     Mandelbrot = 2,
-    LSystem = 3
+    LSystem = 3,
+    StrangeAttractor = 4
 }
 
 public enum GeneratorFamily
 {
     EscapeTime,
-    LSystem
+    LSystem,
+    Attractor
 }
+
+/// <summary>
+/// 奇异吸引子公式身份会进入作品文件，只能追加不能重排。两个公式共享点云、密度与图层基础设施，
+/// 公式策略自身只负责一次状态迭代，避免复制整条渲染管线。
+/// </summary>
+public enum AttractorFormula
+{
+    Clifford = 0,
+    DeJong = 1
+}
+
+/// <summary>
+/// 奇异吸引子的完整可重放配方。SampleCount 是最终质量上限；预览的实际点数由渲染上下文控制，
+/// 不会反向修改作品。局部发光属于当前分形层，不会改变整幅作品的 Master Bloom。
+/// </summary>
+public sealed record StrangeAttractorDefinition(
+    AttractorFormula Formula,
+    double A,
+    double B,
+    double C,
+    double D,
+    int BurnInIterations,
+    int SampleCount,
+    double Exposure,
+    double Gamma,
+    bool GlowEnabled,
+    double GlowSigma,
+    double GlowStrength);
 
 /// <summary>Mandelbrot 与 Julia 共用视口和精度语义，但没有用户常量，因此使用独立定义避免伪字段。</summary>
 public sealed record MandelbrotDefinition(
@@ -157,6 +187,7 @@ public sealed record VariationRecipeDefinition(
     MandelbrotDefinition Mandelbrot,
     RecursiveTreeDefinition RecursiveTree,
     LSystemDefinition LSystem,
+    StrangeAttractorDefinition StrangeAttractor,
     GradientDefinition Gradient);
 
 public sealed record VariationCandidateDefinition(
@@ -259,12 +290,13 @@ public sealed record FractalLayerDefinition(
     MandelbrotDefinition Mandelbrot,
     RecursiveTreeDefinition RecursiveTree,
     LSystemDefinition LSystem,
+    StrangeAttractorDefinition StrangeAttractor,
     GradientDefinition Gradient,
     ArtworkExplorationDefinition Exploration)
     : ArtworkLayerDefinition(Id, Name, IsVisible, Opacity, BlendMode, Transform, Mask)
 {
     public VariationRecipeDefinition ToVariationRecipe() =>
-        new(Seed, GeneratorKind, Julia, Mandelbrot, RecursiveTree, LSystem, Gradient);
+        new(Seed, GeneratorKind, Julia, Mandelbrot, RecursiveTree, LSystem, StrangeAttractor, Gradient);
 
     public FractalLayerDefinition ApplyVariationRecipe(VariationRecipeDefinition recipe) => this with
     {
@@ -274,6 +306,7 @@ public sealed record FractalLayerDefinition(
         Mandelbrot = recipe.Mandelbrot,
         RecursiveTree = recipe.RecursiveTree,
         LSystem = recipe.LSystem,
+        StrangeAttractor = recipe.StrangeAttractor,
         Gradient = recipe.Gradient
     };
 }
@@ -332,15 +365,15 @@ public sealed record UnavailableLayerDefinition(
     : ArtworkLayerDefinition(Id, Name, IsVisible, Opacity, BlendMode, Transform, Mask);
 
 /// <summary>
-/// v7 作品以图层树作为生成器参数的唯一事实来源。兼容属性只是当前选中分形层的不可变投影，
-/// 供既有参数编辑器和算法逐步迁移使用；它们不会作为第二份字段进入 v7 快照。
+/// v8 作品以图层树作为生成器参数的唯一事实来源。兼容属性只是当前选中分形层的不可变投影，
+/// 供既有参数编辑器和算法逐步迁移使用；它们不会作为第二份字段进入 v8 快照。
 /// </summary>
 public sealed record ArtworkDefinition
 {
     private IReadOnlyList<ArtworkLayerDefinition> _layers;
     private ArtworkGraphDefinition? _legacyGraphOverride;
 
-    public const int CurrentFormatVersion = 7;
+    public const int CurrentFormatVersion = 8;
 
     public ArtworkDefinition(
         int formatVersion,
@@ -389,11 +422,12 @@ public sealed record ArtworkDefinition
                 mandelbrot,
                 recursiveTree,
                 lSystem,
+                CreateDefaultAttractor(),
                 gradient,
                 exploration)],
             EffectChainDefinition.CreateDefaultMaster())
     {
-        // 兼容图只活到旧快照验证完成；v7 编码器不会再次保存它。
+        // 兼容图只活到旧快照验证完成；v8 编码器不会再次保存它。
         _ = formatVersion;
         _ = effects;
         _legacyGraphOverride = graph;
@@ -424,6 +458,11 @@ public sealed record ArtworkDefinition
     public MandelbrotDefinition Mandelbrot { get => SelectedFractalLayer.Mandelbrot; init => ReplaceSelected(layer => layer with { Mandelbrot = value }); }
     public RecursiveTreeDefinition RecursiveTree { get => SelectedFractalLayer.RecursiveTree; init => ReplaceSelected(layer => layer with { RecursiveTree = value }); }
     public LSystemDefinition LSystem { get => SelectedFractalLayer.LSystem; init => ReplaceSelected(layer => layer with { LSystem = value }); }
+    public StrangeAttractorDefinition StrangeAttractor
+    {
+        get => SelectedFractalLayer.StrangeAttractor;
+        init => ReplaceSelected(layer => layer with { StrangeAttractor = value });
+    }
     public GradientDefinition Gradient { get => SelectedFractalLayer.Gradient; init => ReplaceSelected(layer => layer with { Gradient = value }); }
     public ArtworkExplorationDefinition Exploration
     {
@@ -474,9 +513,12 @@ public sealed record ArtworkDefinition
     public ArtworkDefinition WithGeneratorKind(FractalGeneratorKind generatorKind) =>
         ReplaceSelectedCopy(layer => layer with { GeneratorKind = generatorKind });
 
-    public GeneratorFamily GeneratorFamily => GeneratorKind is FractalGeneratorKind.Julia or FractalGeneratorKind.Mandelbrot
-        ? GeneratorFamily.EscapeTime
-        : GeneratorFamily.LSystem;
+    public GeneratorFamily GeneratorFamily => GeneratorKind switch
+    {
+        FractalGeneratorKind.Julia or FractalGeneratorKind.Mandelbrot => GeneratorFamily.EscapeTime,
+        FractalGeneratorKind.StrangeAttractor => GeneratorFamily.Attractor,
+        _ => GeneratorFamily.LSystem
+    };
 
     public ArtworkDefinition SelectLayer(string layerId) => this with
     {
@@ -497,8 +539,25 @@ public sealed record ArtworkDefinition
         new MandelbrotDefinition("-0.5", "0", "3", 320, false, 96),
         new RecursiveTreeDefinition(9, 2, 27, 0.72, 0.12, 0.28, 3.2),
         CreateDefaultLSystem(),
-        new GradientDefinition(new RgbaColor(20, 31, 74), new RgbaColor(248, 167, 63), new RgbaColor(3, 5, 12)),
+        CreateDefaultAttractor(),
+        kind == FractalGeneratorKind.StrangeAttractor
+            ? new GradientDefinition(new RgbaColor(24, 47, 89, 0), new RgbaColor(146, 240, 255), new RgbaColor(0, 0, 0, 0))
+            : new GradientDefinition(new RgbaColor(20, 31, 74), new RgbaColor(248, 167, 63), new RgbaColor(3, 5, 12)),
         ArtworkExplorationDefinition.CreateDefault());
+
+    public static StrangeAttractorDefinition CreateDefaultAttractor() => new(
+        AttractorFormula.Clifford,
+        -1.4,
+        1.6,
+        1.0,
+        0.7,
+        256,
+        1_000_000,
+        1.0,
+        1.0,
+        true,
+        2.4,
+        0.8);
 
     public bool Equals(ArtworkDefinition? other) =>
         other is not null && FormatVersion == other.FormatVersion && Canvas == other.Canvas &&
@@ -533,6 +592,7 @@ public sealed record ArtworkDefinition
         FractalGeneratorKind.Mandelbrot => "Mandelbrot 1",
         FractalGeneratorKind.RecursiveTree => "递归树 1",
         FractalGeneratorKind.LSystem => "L-System 1",
+        FractalGeneratorKind.StrangeAttractor => "奇异吸引子 1",
         _ => "分形层 1"
     };
 

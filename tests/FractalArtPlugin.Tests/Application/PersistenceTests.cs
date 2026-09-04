@@ -163,7 +163,7 @@ public sealed class PersistenceTests
     }
 
     [Fact]
-    public void V7快照保存图层树与MasterEffects但不保存运行态对象()
+    public void V8快照保存图层树吸引子与MasterEffects但不保存运行态对象()
     {
         var content = _codec.Encode(ArtworkDefinition.CreateDefault());
         var json = content.Payload.GetRawText();
@@ -173,11 +173,12 @@ public sealed class PersistenceTests
         Assert.DoesNotContain("kernel", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("transient", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("previewImage", json, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(7, content.Payload.GetProperty("formatVersion").GetInt32());
+        Assert.Equal(8, content.Payload.GetProperty("formatVersion").GetInt32());
         var layer = Assert.Single(content.Payload.GetProperty("layers").EnumerateArray());
         Assert.Equal("fractal", layer.GetProperty("typeId").GetString());
         Assert.True(layer.GetProperty("fractal").TryGetProperty("generatorKind", out _));
         Assert.True(layer.GetProperty("fractal").TryGetProperty("exploration", out _));
+        Assert.True(layer.GetProperty("fractal").TryGetProperty("strangeAttractor", out _));
         Assert.False(content.Payload.TryGetProperty("graph", out _));
         Assert.Equal(2, content.Payload.GetProperty("masterEffects").GetProperty("effects").GetArrayLength());
     }
@@ -331,7 +332,16 @@ public sealed class PersistenceTests
     public void 候选锁定与收藏配方完整往返()
     {
         var source = ArtworkDefinition.CreateDefault();
-        var recipe = source.ToVariationRecipe() with { Seed = 99 };
+        var recipe = source.ToVariationRecipe() with
+        {
+            Seed = 99,
+            StrangeAttractor = ArtworkDefinition.CreateDefaultAttractor() with
+            {
+                Formula = AttractorFormula.DeJong,
+                A = 1.4,
+                Exposure = 2.5
+            }
+        };
         var expected = source with
         {
             Exploration = new ArtworkExplorationDefinition(
@@ -354,7 +364,7 @@ public sealed class PersistenceTests
     }
 
     [Fact]
-    public void V7完整往返保持分组顺序遮罩变换探索状态与MasterEffects()
+    public void V8完整往返保持分组顺序遮罩变换探索状态与MasterEffects()
     {
         var first = ArtworkDefinition.CreateDefaultLayer("julia-a", FractalGeneratorKind.Julia) with
         {
@@ -428,20 +438,20 @@ public sealed class PersistenceTests
     }
 
     /// <summary>
-    /// 测试中的旧快照必须真实使用 v3-v6 的顶层结构，不能把 v7 JSON 只改一个版本号后伪装成旧文件。
+    /// 测试中的旧快照必须真实使用 v3-v6 的顶层结构，不能把当前 JSON 只改一个版本号后伪装成旧文件。
     /// 该辅助方法从当前层配方投影出历史字段，并仅在 v6 补入当时真实存在的规范图和空效果链。
     /// </summary>
     private JsonObject CreateLegacySnapshotNode(ArtworkDefinition artwork, int version)
     {
-        var v7 = JsonNode.Parse(_codec.Encode(artwork).Payload.GetRawText())!.AsObject();
-        var fractal = v7["layers"]![0]!["fractal"]!.AsObject();
-        var presentation = v7["presentation"]!.DeepClone().AsObject();
+        var current = JsonNode.Parse(_codec.Encode(artwork).Payload.GetRawText())!.AsObject();
+        var fractal = current["layers"]![0]!["fractal"]!.AsObject();
+        var presentation = current["presentation"]!.DeepClone().AsObject();
         presentation.Remove("selectedLayerId");
         var root = new JsonObject
         {
             ["formatVersion"] = version,
             ["seed"] = fractal["seed"]!.DeepClone(),
-            ["canvas"] = v7["canvas"]!.DeepClone(),
+            ["canvas"] = current["canvas"]!.DeepClone(),
             ["generatorKind"] = fractal["generatorKind"]!.DeepClone(),
             ["julia"] = fractal["julia"]!.DeepClone(),
             ["mandelbrot"] = fractal["mandelbrot"]!.DeepClone(),

@@ -29,6 +29,12 @@ public static class FractalArtPluginServices
         services.AddSingleton<ITurtlePathInterpreter, TurtlePathInterpreter>();
         services.AddSingleton<IRecursiveTreePathGenerator, RecursiveTreePathGenerator>();
         services.AddSingleton<IPathStrokeRenderer, PathStrokeRenderer>();
+        services.AddSingleton<IAttractorFormulaKernel, CliffordAttractorKernel>();
+        services.AddSingleton<IAttractorFormulaKernel, DeJongAttractorKernel>();
+        services.AddSingleton<IAttractorPointCloudGenerator, StrangeAttractorPointGenerator>();
+        services.AddSingleton<IPointDensityRenderer, PointDensityRenderer>();
+        services.AddSingleton<IDensityGradientMapper, DensityGradientMapper>();
+        services.AddSingleton<IDensityGlowRenderer, DensityGlowRenderer>();
         services.AddSingleton<IScalarMaskConverter, ScalarMaskConverter>();
         services.AddSingleton<ILayerRasterTransformer, LayerRasterTransformer>();
         services.AddSingleton<ILayerCompositor, LayerCompositor>();
@@ -37,6 +43,10 @@ public static class FractalArtPluginServices
         services.AddSingleton<IArtworkGraphNodeExecutor, MandelbrotFieldNodeExecutor>();
         services.AddSingleton<IArtworkGraphNodeExecutor, RecursiveTreePathNodeExecutor>();
         services.AddSingleton<IArtworkGraphNodeExecutor, LSystemPathNodeExecutor>();
+        services.AddSingleton<IArtworkGraphNodeExecutor, StrangeAttractorPointsNodeExecutor>();
+        services.AddSingleton<IArtworkGraphNodeExecutor, PointDensityNodeExecutor>();
+        services.AddSingleton<IArtworkGraphNodeExecutor, DensityGradientNodeExecutor>();
+        services.AddSingleton<IArtworkGraphNodeExecutor, DensityGlowNodeExecutor>();
         services.AddSingleton<IArtworkGraphNodeExecutor, ScalarGradientNodeExecutor>();
         services.AddSingleton<IArtworkGraphNodeExecutor, PathStrokeNodeExecutor>();
         services.AddSingleton<IArtworkGraphNodeExecutor, EffectChainNodeExecutor>();

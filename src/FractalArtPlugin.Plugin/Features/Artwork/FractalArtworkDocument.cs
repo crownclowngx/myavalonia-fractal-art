@@ -122,6 +122,8 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         _presetCatalog.ArtworkPresets.Where(item => item.GeneratorKind == FractalGeneratorKind.Mandelbrot).ToArray();
     public IReadOnlyList<ArtworkPresetDefinition> LSystemExamples =>
         _presetCatalog.ArtworkPresets.Where(item => item.GeneratorKind == FractalGeneratorKind.LSystem).ToArray();
+    public IReadOnlyList<ArtworkPresetDefinition> AttractorExamples =>
+        _presetCatalog.ArtworkPresets.Where(item => item.GeneratorKind == FractalGeneratorKind.StrangeAttractor).ToArray();
     public IReadOnlyList<PalettePresetDefinition> PalettePresets => _presetCatalog.PalettePresets;
     public ArtworkLayerDefinition SelectedLayer =>
         ArtworkLayerTree.Find(_artwork.Layers, _artwork.Presentation.SelectedLayerId) ?? _artwork.SelectedFractalLayer;
@@ -235,7 +237,21 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
     public bool IsMandelbrotGenerator => IsFractalLayerSelected && _artwork.GeneratorKind == FractalGeneratorKind.Mandelbrot;
     public bool IsLSystemGenerator => IsFractalLayerSelected && _artwork.GeneratorKind == FractalGeneratorKind.LSystem;
     public bool IsRecursiveTreeGenerator => IsFractalLayerSelected && _artwork.GeneratorKind == FractalGeneratorKind.RecursiveTree;
-    public bool IsSeedControlVisible => IsJuliaGenerator || IsRecursiveTreeGenerator;
+    public bool IsAttractorGenerator => IsFractalLayerSelected && _artwork.GeneratorKind == FractalGeneratorKind.StrangeAttractor;
+    public bool IsSeedControlVisible => IsJuliaGenerator || IsRecursiveTreeGenerator || IsAttractorGenerator;
+    public IReadOnlyList<string> AttractorFormulaOptions { get; } = ["Clifford", "De Jong"];
+    public string SelectedAttractorFormula
+    {
+        get => _artwork.StrangeAttractor.Formula == AttractorFormula.DeJong ? "De Jong" : "Clifford";
+        set
+        {
+            var formula = value == "De Jong" ? AttractorFormula.DeJong : AttractorFormula.Clifford;
+            if (formula != _artwork.StrangeAttractor.Formula)
+            {
+                Mutate(_artwork with { StrangeAttractor = _artwork.StrangeAttractor with { Formula = formula } });
+            }
+        }
+    }
     public string GeneratorKindName => SelectedLayer switch
     {
         LayerGroupDefinition => "分组属性",
@@ -245,6 +261,7 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
             FractalGeneratorKind.Julia => "时间逃逸 · Julia",
             FractalGeneratorKind.Mandelbrot => "时间逃逸 · Mandelbrot",
             FractalGeneratorKind.LSystem => "递归路径 · L-System",
+            FractalGeneratorKind.StrangeAttractor => $"星云与粒子 · {_artwork.StrangeAttractor.Formula}",
             _ => "递归路径 · 递归树（兼容）"
         }
     };
@@ -419,6 +436,30 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
                 : _artwork with { Julia = _artwork.Julia with { PrecisionDigits = value } });
         }
     }
+
+    public double AttractorA { get => _artwork.StrangeAttractor.A; set => SetAttractor(value, current => current with { A = value }); }
+    public double AttractorB { get => _artwork.StrangeAttractor.B; set => SetAttractor(value, current => current with { B = value }); }
+    public double AttractorC { get => _artwork.StrangeAttractor.C; set => SetAttractor(value, current => current with { C = value }); }
+    public double AttractorD { get => _artwork.StrangeAttractor.D; set => SetAttractor(value, current => current with { D = value }); }
+    public int AttractorBurnIn
+    {
+        get => _artwork.StrangeAttractor.BurnInIterations;
+        set => SetAttractor(value, current => current with { BurnInIterations = value });
+    }
+    public int AttractorSampleCount
+    {
+        get => _artwork.StrangeAttractor.SampleCount;
+        set => SetAttractor(value, current => current with { SampleCount = value });
+    }
+    public double AttractorExposure { get => _artwork.StrangeAttractor.Exposure; set => SetAttractor(value, current => current with { Exposure = value }); }
+    public double AttractorGamma { get => _artwork.StrangeAttractor.Gamma; set => SetAttractor(value, current => current with { Gamma = value }); }
+    public bool AttractorGlowEnabled
+    {
+        get => _artwork.StrangeAttractor.GlowEnabled;
+        set => SetAttractor(value, current => current with { GlowEnabled = value });
+    }
+    public double AttractorGlowSigma { get => _artwork.StrangeAttractor.GlowSigma; set => SetAttractor(value, current => current with { GlowSigma = value }); }
+    public double AttractorGlowStrength { get => _artwork.StrangeAttractor.GlowStrength; set => SetAttractor(value, current => current with { GlowStrength = value }); }
 
     public string LSystemAxiom
     {
@@ -1379,7 +1420,8 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         }
 
         foreach (var source in ArtworkLayerTree.EnumerateFractals(_artwork.Layers)
-                     .Where(layer => layer.GeneratorKind is FractalGeneratorKind.Julia or FractalGeneratorKind.Mandelbrot &&
+                     .Where(layer => (layer.GeneratorKind is FractalGeneratorKind.Julia or FractalGeneratorKind.Mandelbrot or
+                                         FractalGeneratorKind.StrangeAttractor) &&
                                      layer.Id != SelectedLayer.Id))
         {
             MaskSources.Add(new MaskSourceOption(source.Id, source.Name));
@@ -1438,6 +1480,9 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
             StatusMessage = exception.Message;
         }
     }
+
+    private void SetAttractor<T>(T _, Func<StrangeAttractorDefinition, StrangeAttractorDefinition> replace) =>
+        TryMutate(_artwork with { StrangeAttractor = replace(_artwork.StrangeAttractor) });
 
     private void SetHighPrecisionNumber(
         string? text,
@@ -1581,11 +1626,15 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
                     Presentation = snapshot.Presentation with { HighQualityPreview = false }
                 })
                 : requestedContext;
-            var precisionLabel = snapshot.GeneratorFamily == GeneratorFamily.LSystem
-                ? "递归路径描边"
-                : context.NumericPrecision == NumericPrecision.Arbitrary
-                ? $"任意精度 {context.EffectivePrecisionDigits}/{context.ConfiguredPrecisionDigits} 位"
-                : "double 快速模式";
+            var precisionLabel = snapshot.GeneratorFamily switch
+            {
+                GeneratorFamily.LSystem => "递归路径描边",
+                GeneratorFamily.Attractor =>
+                    $"{snapshot.StrangeAttractor.Formula} 点云密度 · {context.PointSampleBudget:N0} 点预算",
+                _ when context.NumericPrecision == NumericPrecision.Arbitrary =>
+                    $"任意精度 {context.EffectivePrecisionDigits}/{context.ConfiguredPrecisionDigits} 位",
+                _ => "double 快速模式"
+            };
             StatusMessage = $"正在渲染 {context.Width}×{context.Height} 交互预览 · {precisionLabel}…";
             if (debounce)
             {
@@ -1658,8 +1707,13 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         var fallback = diagnostics is { PrecisionFallbackPixels: > 0 }
             ? $" · 回退 {diagnostics.PrecisionFallbackPixels} 像素"
             : string.Empty;
-        var precision = result.Diagnostics?.Kernel is "recursive-tree" or "l-system"
-            ? result.Diagnostics.Kernel == "l-system" ? "L-System 路径描边" : "递归树路径描边"
+        var precision = result.Diagnostics?.Kernel is "recursive-tree" or "l-system" or "attractor-density"
+            ? result.Diagnostics.Kernel switch
+            {
+                "l-system" => "L-System 路径描边",
+                "attractor-density" => $"{_artwork.StrangeAttractor.Formula} 点云密度",
+                _ => "递归树路径描边"
+            }
             : context.NumericPrecision == NumericPrecision.Arbitrary
             ? $"任意精度 {context.EffectivePrecisionDigits}/{context.ConfiguredPrecisionDigits} 位"
             : "double 快速模式";
@@ -1700,8 +1754,21 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         OnPropertyChanged(nameof(IsMandelbrotGenerator));
         OnPropertyChanged(nameof(IsLSystemGenerator));
         OnPropertyChanged(nameof(IsRecursiveTreeGenerator));
+        OnPropertyChanged(nameof(IsAttractorGenerator));
         OnPropertyChanged(nameof(IsSeedControlVisible));
         OnPropertyChanged(nameof(GeneratorKindName));
+        OnPropertyChanged(nameof(SelectedAttractorFormula));
+        OnPropertyChanged(nameof(AttractorA));
+        OnPropertyChanged(nameof(AttractorB));
+        OnPropertyChanged(nameof(AttractorC));
+        OnPropertyChanged(nameof(AttractorD));
+        OnPropertyChanged(nameof(AttractorBurnIn));
+        OnPropertyChanged(nameof(AttractorSampleCount));
+        OnPropertyChanged(nameof(AttractorExposure));
+        OnPropertyChanged(nameof(AttractorGamma));
+        OnPropertyChanged(nameof(AttractorGlowEnabled));
+        OnPropertyChanged(nameof(AttractorGlowSigma));
+        OnPropertyChanged(nameof(AttractorGlowStrength));
         OnPropertyChanged(nameof(CenterX));
         OnPropertyChanged(nameof(CenterY));
         OnPropertyChanged(nameof(Scale));

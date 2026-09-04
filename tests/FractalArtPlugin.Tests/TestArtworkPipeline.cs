@@ -15,7 +15,11 @@ internal static class TestArtworkPipeline
             new MandelbrotFieldNodeExecutor(new MandelbrotFieldGenerator()),
             new RecursiveTreePathNodeExecutor(new RecursiveTreePathGenerator()),
             new LSystemPathNodeExecutor(new LSystemExpander(rules), new TurtlePathInterpreter()),
+            new StrangeAttractorPointsNodeExecutor(CreateAttractorGenerator()),
+            new PointDensityNodeExecutor(new PointDensityRenderer()),
             new ScalarGradientNodeExecutor(new LinearGradientMapper()),
+            new DensityGradientNodeExecutor(new DensityGradientMapper()),
+            new DensityGlowNodeExecutor(new DensityGlowRenderer()),
             new PathStrokeNodeExecutor(new PathStrokeRenderer()),
             new EffectChainNodeExecutor(),
             new SingleLayerCompositionNodeExecutor(),
@@ -24,4 +28,7 @@ internal static class TestArtworkPipeline
         var executor = new ArtworkGraphExecutor(graphValidator, cache ?? new ArtworkGraphCache(), executors);
         return new ArtworkRenderPipeline(new ArtworkValidator(rules, graphValidator), executor);
     }
+
+    public static IAttractorPointCloudGenerator CreateAttractorGenerator() =>
+        new StrangeAttractorPointGenerator([new CliffordAttractorKernel(), new DeJongAttractorKernel()]);
 }

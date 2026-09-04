@@ -1,9 +1,9 @@
 # Fractal Art 插件形态、产品定位与闭环实施计划
 
-> 文档状态：产品与实施基线；G0001–G0008（含 G0003 高精度性能专项）已完成代码与本地自动化门禁，真实 Host 与其余人工验收待完成
+> 文档状态：产品与实施基线；G0001–G0009（含 G0003 高精度性能专项）已完成代码与本地自动化门禁，真实 Host 与其余人工验收待完成
 > 插件持久身份：`myavalonia.plugin.fractal.art`  
 > 产品显示名：Fractal Art / 分形画室  
-> 当前工程状态：已完成产品化模板、四类生成器、v7 多图层/遮罩合成、实时 Master Effects 与 G0007 Workflow 双角色
+> 当前工程状态：已完成产品化模板、五类生成器、v8 点云/密度、多图层/遮罩合成、实时 Master Effects 与 G0007 Workflow 双角色
 > 本文范围：定义产品形态、能力边界、跨插件关系，以及以 `Gxxxx` 编号推进的实施顺序
 
 > 实施档案：每个阶段的当下计划、实施方案、结果与未完成的人工验收独立归档在
@@ -24,7 +24,7 @@
 
 ### 2.1 Fractal Art 当前形态
 
-截至 2026-09-04，项目已经完成 G0001–G0008：
+截至 2026-09-04，项目已经完成 G0001–G0009：
 
 - `FractalArtPlugin.Plugin` 是唯一真实插件程序集和正式交付物；
 - `FractalArtPlugin.Standalone` 通过独立 Scope 承载同一套真实 View、Document 和业务服务；
@@ -43,14 +43,15 @@
 - G0004 提供 3 个视觉预设、3 个调色板和“细节/流动/卷曲”艺术参数；艺术参数直接映射 Julia 真实参数，
   不保存第二份状态；
 - 变体探索支持 9 个确定性候选、强度、只变形态/只变质感、Seed/构图/形态/颜色锁定、收藏、恢复与续变；
-- 候选配方和收藏按层随当前 v7 作品快照保存，缩略图使用最多 3 路并发、Document Scope 节点缓存和整批取消提交；
+- 候选配方和收藏按层随当前 v8 作品快照保存，缩略图使用最多 3 路并发、Document Scope 节点缓存和整批取消提交；
 - G0005 增加确定性递归树、带层级路径几何、CPU 分层描边，以及翡翠生长/月下银枝两个“植物与生长”预设；
 - 作品格式升级到 v4，保存生成器、树参数及候选路径配方，v1/v2/v3 显式迁移为 Julia；
 - G0005.1 增加时间逃逸/L-System 导航、Mandelbrot 双精度与任意精度内核、受预算规则展开和 Turtle 路径解释；
 - G0006 增加版本化类型安全创作图、空效果链、只读图像/遮罩，以及每个 Document 独占的有界 LRU 节点缓存；
 - G0007 增加会话级 ImageLab 导出参数、文件式内部后处理，以及供 Studio 使用的 Render/Release Action；
 - G0008 已实现最多 8 个分形层、4 个单层组、跨分形 ScalarField 遮罩、完整二维变换、五种混合以及实时 Tone/Bloom；
-- 当前本地 Debug 自动化共 149 项测试通过；G0003 Release 输出指纹基准和四类代表 RGBA 指纹保持稳定；
+- G0009 已实现 Clifford/De Jong、不可变 PointCloud、确定性整数密度、透明渐变、图层局部发光与密度遮罩；
+- 当前本地 Debug 自动化共 165 项测试通过；G0003 Release 输出指纹基准和四类旧 RGBA 指纹保持稳定；
 - 当前仍没有 Tool、Workbench Command、默认快捷键或实时 ImageLab 预览。
 
 阶段实施事实、自动化证据和待人工验收见 [`docs/refactoring`](refactoring/README.md)。
@@ -782,7 +783,7 @@ L-System
 - 使用 File Artifact v1 和 ImageLab Provider Action 传输文件，不共享插件二进制；
 - Fractal Art 以 Consumer 身份提供“经 ImageLab 导出”，同时提供 Render/Release Provider Action；
 - Studio 继续使用 Definition v2 顺序编排三个既有 Action，不修改生产代码；
-- G0007 ImageLab 效果只在导出时应用，不进入 ArtworkSnapshot v7，也不提供实时预览；
+- G0007 ImageLab 效果只在导出时应用，不进入 ArtworkSnapshot v8，也不提供实时预览；
 - ImageLab 未安装时普通创作、保存和原始 PNG 导出继续可用。
 
 **内部链路**
@@ -837,6 +838,11 @@ Fractal 最终质量 PNG
 - 两个 Document 的图层和缓存完全隔离。
 
 ### G0009：第三类数据形态——点云与密度
+
+> 当前状态（2026-09-04）：代码、v8 持久化迁移、165 项本地 Debug 自动化测试与专用文档完成；
+> 真实 Host 与人工视觉验收待完成。详见[计划](refactoring/G0009/plan.md)、
+> [点云与密度设计](refactoring/G0009/point-cloud-density-design.md)、
+> [实施方案](refactoring/G0009/implementation.md)和[实施结果](refactoring/G0009/result.md)。
 
 **目标**
 
@@ -1010,7 +1016,7 @@ Workflow Studio 可以把“渲染分形作品”作为工作流步骤，与其�
 
 ## 10. 推荐的实际开工顺序
 
-当前进度（2026-09-04）：`G0001 ✓ → G0002 ✓ → G0003 ✓ → G0004 ✓ → G0005 ✓ → G0005.1 ✓ → G0006 ✓ → G0007（代码已实施，最终门禁中）`。其中勾选表示代码与本地自动化门禁完成，
+当前进度（2026-09-04）：`G0001 ✓ → G0002 ✓ → G0003 ✓ → G0004 ✓ → G0005 ✓ → G0005.1 ✓ → G0006 ✓ → G0007 ✓ → G0008 ✓ → G0009 ✓`。其中勾选表示代码与本地自动化门禁完成，
 不代表真实 Host、正式 ZIP 或全部人工验收已经封板。
 
 严格按以下顺序推进：

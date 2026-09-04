@@ -27,6 +27,7 @@
               <Button Margin="0,0,4,4" Padding="7,3" Command="{Binding AddLayerCommand}" CommandParameter="Mandelbrot" Content="+ Mandelbrot" />
               <Button Margin="0,0,4,4" Padding="7,3" Command="{Binding AddLayerCommand}" CommandParameter="LSystem" Content="+ L-System" />
               <Button Margin="0,0,4,4" Padding="7,3" Command="{Binding AddLayerCommand}" CommandParameter="RecursiveTree" Content="+ 递归树" />
+              <Button Margin="0,0,4,4" Padding="7,3" Command="{Binding AddLayerCommand}" CommandParameter="StrangeAttractor" Content="+ 吸引子" />
               <Button Margin="0,0,4,4" Padding="7,3" Command="{Binding AddGroupCommand}" Content="+ 分组" />
             </WrapPanel>
           </StackPanel>
@@ -233,6 +234,49 @@
                 </WrapPanel>
                 <TextBox Text="{Binding GradientStartHex}" PlaceholderText="起始 #RRGGBBAA" />
                 <TextBox Text="{Binding GradientEndHex}" PlaceholderText="结束 #RRGGBBAA" />
+              </StackPanel>
+            </TabItem>
+          </TabControl>
+
+          <TabControl IsVisible="{Binding IsAttractorGenerator}">
+            <TabItem Header="预设">
+              <StackPanel Margin="8" Spacing="7">
+                <TextBlock Foreground="#8791AD" Text="奇异吸引子 · 星云与粒子" />
+                <WrapPanel>
+                  <Button Margin="0,0,6,6" Command="{Binding ApplyArtworkPresetCommand}" CommandParameter="attractor-aurora" Content="极光织网" />
+                  <Button Margin="0,0,6,6" Command="{Binding ApplyArtworkPresetCommand}" CommandParameter="attractor-silk" Content="丝绸星云" />
+                  <Button Margin="0,0,6,6" Command="{Binding ApplyArtworkPresetCommand}" CommandParameter="attractor-stardust" Content="星尘花冠" />
+                  <Button Margin="0,0,6,6" Command="{Binding ApplyArtworkPresetCommand}" CommandParameter="attractor-abyss" Content="深海回环" />
+                </WrapPanel>
+                <TextBlock Foreground="#8791AD" Text="预设会设置公式、形态、透明渐变和局部发光；仍可继续编辑。" TextWrapping="Wrap" />
+              </StackPanel>
+            </TabItem>
+            <TabItem Header="公式">
+              <StackPanel Margin="8" Spacing="7">
+                <ComboBox ItemsSource="{Binding AttractorFormulaOptions}" SelectedItem="{Binding SelectedAttractorFormula}" />
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                  <NumericUpDown Grid.Column="0" Minimum="-4" Maximum="4" Increment="0.01" Value="{Binding AttractorA}" PlaceholderText="参数 A" />
+                  <NumericUpDown Grid.Column="1" Minimum="-4" Maximum="4" Increment="0.01" Value="{Binding AttractorB}" PlaceholderText="参数 B" />
+                </Grid>
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                  <NumericUpDown Grid.Column="0" Minimum="-4" Maximum="4" Increment="0.01" Value="{Binding AttractorC}" PlaceholderText="参数 C" />
+                  <NumericUpDown Grid.Column="1" Minimum="-4" Maximum="4" Increment="0.01" Value="{Binding AttractorD}" PlaceholderText="参数 D" />
+                </Grid>
+                <NumericUpDown Minimum="16" Maximum="4096" Increment="16" Value="{Binding AttractorBurnIn}" PlaceholderText="每轨道预热迭代" />
+                <NumericUpDown Minimum="10000" Maximum="2000000" Increment="10000" Value="{Binding AttractorSampleCount}" PlaceholderText="最终采样点数" />
+                <TextBlock Foreground="#8791AD" Text="普通预览最多 10 万点，精细预览最多 40 万点；最终导出使用完整采样数。" TextWrapping="Wrap" />
+              </StackPanel>
+            </TabItem>
+            <TabItem Header="密度与发光">
+              <StackPanel Margin="8" Spacing="7">
+                <NumericUpDown Minimum="0.1" Maximum="32" Increment="0.1" Value="{Binding AttractorExposure}" PlaceholderText="密度曝光" />
+                <NumericUpDown Minimum="0.2" Maximum="4" Increment="0.05" Value="{Binding AttractorGamma}" PlaceholderText="Gamma" />
+                <CheckBox Foreground="#D4DAED" Content="当前吸引子层局部发光" IsChecked="{Binding AttractorGlowEnabled}" />
+                <NumericUpDown Minimum="0.5" Maximum="10" Increment="0.1" Value="{Binding AttractorGlowSigma}" PlaceholderText="发光 Sigma" />
+                <NumericUpDown Minimum="0" Maximum="4" Increment="0.1" Value="{Binding AttractorGlowStrength}" PlaceholderText="发光强度" />
+                <TextBox Text="{Binding GradientStartHex}" PlaceholderText="低密度 #RRGGBBAA" />
+                <TextBox Text="{Binding GradientEndHex}" PlaceholderText="高密度 #RRGGBBAA" />
+                <TextBlock Foreground="#8791AD" Text="零密度始终透明；局部发光不会影响其它图层或 Master Bloom。" TextWrapping="Wrap" />
               </StackPanel>
             </TabItem>
           </TabControl>
