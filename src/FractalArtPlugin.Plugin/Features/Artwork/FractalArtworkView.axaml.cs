@@ -176,6 +176,29 @@ public sealed partial class FractalArtworkView : UserControl
         }
     }
 
+    /// <summary>
+    /// 图层行位于 DataTemplate 内，按钮拿到的是行投影。View 只把稳定 ID 交给 Document，
+    /// 选择规则、历史和异步渲染仍集中在 Document，避免 UI 层直接改领域树。
+    /// </summary>
+    private void HandleSelectLayer(object? sender, RoutedEventArgs eventArgs)
+    {
+        if (DataContext is FractalArtworkDocument document &&
+            sender is Button { DataContext: ArtworkLayerItem item })
+        {
+            document.SelectLayerCommand.Execute(item);
+        }
+    }
+
+    /// <summary>显隐操作同样按图层 ID 路由，确保模板复用和排序后不会误改其他图层。</summary>
+    private void HandleToggleLayerVisibility(object? sender, RoutedEventArgs eventArgs)
+    {
+        if (DataContext is FractalArtworkDocument document &&
+            sender is Button { DataContext: ArtworkLayerItem item })
+        {
+            document.ToggleLayerVisibilityCommand.Execute(item);
+        }
+    }
+
     private async void HandleContinueFavorite(object? sender, RoutedEventArgs eventArgs)
     {
         if (DataContext is FractalArtworkDocument document &&

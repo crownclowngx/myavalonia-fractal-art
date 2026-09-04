@@ -352,6 +352,44 @@ public sealed class DocumentTests
         Assert.Contains("8 条线段", document.LSystemDiagnostics, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task 图层命令参数路由MasterEffects与撤销重做形成同一作品历史()
+    {
+        using var fixture = new DocumentFixture();
+        using var document = fixture.CreateDocument();
+        await document.InitializeAsync(new NewDocumentActivation("G0008"), CancellationToken.None);
+
+        document.AddLayerCommand.Execute("Mandelbrot");
+        Assert.Equal(2, document.Artwork.Layers.Count);
+        Assert.True(document.IsMandelbrotGenerator);
+        document.CenterX = "-0.75";
+        document.SelectedLayerName = "遮罩源";
+        document.SelectedLayerOpacity = 0.7;
+
+        var juliaItem = document.LayerItems.Single(item => item.Id == "layer-1");
+        document.SelectLayerCommand.Execute(juliaItem);
+        document.ConstantReal = "-0.61";
+        document.SelectedMaskSource = document.MaskSources.Single(option => option.Name == "遮罩源");
+        document.MaskThreshold = 0.4;
+        document.ToneEnabled = true;
+        document.ToneBrightness = 0.15;
+
+        var julia = Assert.IsType<FractalLayerDefinition>(document.SelectedLayer);
+        Assert.Equal("-6.1e-1", julia.Julia.ConstantReal);
+        Assert.Equal("layer-2", julia.Mask!.SourceLayerId);
+        Assert.Equal(0.4, julia.Mask.Threshold);
+        Assert.Equal(-0.75, ArbitraryDecimal.Parse(
+            ArtworkLayerTree.FindFractal(document.Artwork.Layers, "layer-2")!.Mandelbrot.CenterX).ToDouble(), 12);
+        Assert.True(document.IsDirty);
+        Assert.True(document.ToneEnabled);
+        Assert.True(document.CanUndo);
+
+        document.UndoCommand.Execute(null);
+        Assert.Equal(0, document.ToneBrightness);
+        document.RedoCommand.Execute(null);
+        Assert.Equal(0.15, document.ToneBrightness);
+    }
+
     private static async Task WaitUntilAsync(Func<bool> predicate)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));

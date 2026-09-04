@@ -180,6 +180,11 @@ internal interface IArtworkGraphExecutor
         ArtworkDefinition artwork,
         RenderContext context,
         CancellationToken cancellationToken);
+
+    Task<(ScalarField Field, ArtworkRenderExecutionSummary Execution)> ExecuteScalarAsync(
+        ArtworkDefinition artwork,
+        RenderContext context,
+        CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -214,10 +219,13 @@ internal sealed class ArtworkGraphExecutor : IArtworkGraphExecutor
         RenderContext context,
         CancellationToken cancellationToken)
     {
-        var ordered = _validator.ValidateAndSort(artwork.Graph, artwork.GeneratorKind, artwork.Effects);
+        var ordered = _validator.ValidateAndSort(artwork.Graph, artwork.GeneratorKind, EffectChainDefinition.Empty);
         cancellationToken.ThrowIfCancellationRequested();
         var values = new Dictionary<string, ArtworkGraphValue>(StringComparer.Ordinal);
         var keys = new Dictionary<string, ArtworkNodeCacheKey>(StringComparer.Ordinal);
+        var remainingConsumers = artwork.Graph.Connections
+            .GroupBy(connection => connection.SourceNodeId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
         var cacheHits = new List<string>();
         var executed = new List<string>();
         var cacheableCount = 0;
@@ -249,6 +257,7 @@ internal sealed class ArtworkGraphExecutor : IArtworkGraphExecutor
                     cancellationToken.ThrowIfCancellationRequested();
                     values.Add(node.Id, cached);
                     cacheHits.Add(node.Id);
+                    ReleaseConsumedInputs(artwork.Graph, node.Id, values, remainingConsumers);
                     continue;
                 }
             }
@@ -269,6 +278,10 @@ internal sealed class ArtworkGraphExecutor : IArtworkGraphExecutor
                 {
                     _cache.Set(key, value);
                 }
+
+                // 非缓存中间值只活到最后一个消费者。键摘要很小且可能仍参与后续输入身份，
+                // 因而只及时释放可能很大的 ScalarField、Path 或 ImageSurface 实例。
+                ReleaseConsumedInputs(artwork.Graph, node.Id, values, remainingConsumers);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -291,10 +304,72 @@ internal sealed class ArtworkGraphExecutor : IArtworkGraphExecutor
             new ArtworkRenderExecutionSummary(cacheHits.AsReadOnly(), executed.AsReadOnly(), cacheableCount));
     }
 
+    /// <summary>
+    /// 遮罩只求值生成节点，并与完整图使用完全相同的节点键和 Document Scope 缓存。
+    /// 隐藏遮罩源因此不会额外执行着色、效果和合成节点；稍后恢复可见时又能直接复用标量场。
+    /// </summary>
+    public async Task<(ScalarField Field, ArtworkRenderExecutionSummary Execution)> ExecuteScalarAsync(
+        ArtworkDefinition artwork,
+        RenderContext context,
+        CancellationToken cancellationToken)
+    {
+        var graph = artwork.Graph;
+        var generatorNode = _validator.ValidateAndSort(graph, artwork.GeneratorKind, EffectChainDefinition.Empty)
+            .Single(node => node.Operation is ArtworkGraphOperation.JuliaField or ArtworkGraphOperation.MandelbrotField);
+        cancellationToken.ThrowIfCancellationRequested();
+        var key = ArtworkGraphCacheKeyFactory.Create(graph.Version, generatorNode, artwork, context,
+            new Dictionary<string, ArtworkNodeCacheKey>());
+        if (_cache.TryGet(key, out var cached) && cached is ScalarFieldGraphValue cachedField)
+        {
+            return (cachedField.Value, new ArtworkRenderExecutionSummary([generatorNode.Id], [], 1));
+        }
+
+        var executor = _executors[generatorNode.Operation];
+        ArtworkGraphValue value;
+        try
+        {
+            value = await executor.ExecuteAsync(
+                artwork, context, new Dictionary<string, ArtworkGraphValue>(), cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            throw new ArtworkGraphExecutionException(generatorNode.Id, generatorNode.Operation, exception);
+        }
+
+        if (value is not ScalarFieldGraphValue field)
+        {
+            throw new InvalidOperationException($"节点 {generatorNode.Id} 没有产生 ScalarField。");
+        }
+
+        _cache.Set(key, value);
+        return (field.Value, new ArtworkRenderExecutionSummary([], [generatorNode.Id], 1));
+    }
+
     private static bool IsCacheable(ArtworkGraphOperation operation) => operation is
         ArtworkGraphOperation.JuliaField or ArtworkGraphOperation.MandelbrotField or
         ArtworkGraphOperation.RecursiveTreePath or ArtworkGraphOperation.LSystemPath or
         ArtworkGraphOperation.ScalarGradient or ArtworkGraphOperation.PathStroke;
+
+    private static void ReleaseConsumedInputs(
+        ArtworkGraphDefinition graph,
+        string consumerNodeId,
+        Dictionary<string, ArtworkGraphValue> values,
+        Dictionary<string, int> remainingConsumers)
+    {
+        foreach (var connection in graph.Connections.Where(item => item.TargetNodeId == consumerNodeId))
+        {
+            var remaining = --remainingConsumers[connection.SourceNodeId];
+            if (remaining == 0 && connection.SourceNodeId != graph.OutputNodeId)
+            {
+                values.Remove(connection.SourceNodeId);
+            }
+        }
+    }
 }
 
 /// <summary>

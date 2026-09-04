@@ -1,4 +1,4 @@
-# G0001–G0007 实施档案
+# G0001–G0008 实施档案
 
 本目录独立保存 Fractal Art 产品化重构的专业文档，避免把阶段性决策、实施细节和验收证据散落在产品愿景中。
 产品长期路线仍以 [`product-shape-and-implementation-plan.md`](../product-shape-and-implementation-plan.md) 为基线。
@@ -15,6 +15,7 @@
 | G0005.1 双生成器入口与可编辑 L-System | [计划](G0005.1/plan.md) | [交互](G0005.1/interaction-design.md) / [方案](G0005.1/implementation.md) | [结果](G0005.1/result.md) |
 | G0006 内部创作图、缓存与非破坏性效果底座 | [计划](G0006/plan.md) | [设计](G0006/graph-cache-design.md) / [方案](G0006/implementation.md) | [结果](G0006/result.md) |
 | G0007 Fractal 双角色与 ImageLab 文件效果 | [计划](G0007/plan.md) | [方案](G0007/implementation.md) / [Artifact](G0007/file-artifact-v1.md) | [结果](G0007/result.md) |
+| G0008 多图层、遮罩与跨分形组合 | [计划](G0008/plan.md) | [合成设计](G0008/composition-design.md) / [方案](G0008/implementation.md) | [结果](G0008/result.md) |
 
 G0003 后续的高精度性能与 Domain 模块化工作已独立实施并完成本地自动化，见
 [专项计划](G0003/precision-performance/plan.md)、[优化设计](G0003/precision-performance/optimization-design.md)、

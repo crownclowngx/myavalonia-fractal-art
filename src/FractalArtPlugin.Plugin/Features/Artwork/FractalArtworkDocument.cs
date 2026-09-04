@@ -30,6 +30,7 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
     private readonly IImageLabExportDialog? _imageLabExportDialog;
     private readonly IWorkflowRecipeFiles? _workflowRecipeFiles;
     private readonly IWorkflowRecipeDialog? _workflowRecipeDialog;
+    private readonly IArtworkLayerEditor _layerEditor;
     private readonly IDocumentLifetime _lifetime;
     private ArtworkDefinition _artwork = ArtworkDefinition.CreateDefault();
     private DocumentPresentationState _presentation = new("分形作品");
@@ -59,7 +60,8 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         IImageLabArtEffectExportCoordinator? imageLabCoordinator = null,
         IImageLabExportDialog? imageLabExportDialog = null,
         IWorkflowRecipeFiles? workflowRecipeFiles = null,
-        IWorkflowRecipeDialog? workflowRecipeDialog = null)
+        IWorkflowRecipeDialog? workflowRecipeDialog = null,
+        IArtworkLayerEditor? layerEditor = null)
     {
         _validator = validator;
         _snapshotCodec = snapshotCodec;
@@ -77,6 +79,7 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         _imageLabExportDialog = imageLabExportDialog;
         _workflowRecipeFiles = workflowRecipeFiles;
         _workflowRecipeDialog = workflowRecipeDialog;
+        _layerEditor = layerEditor ?? new ArtworkLayerEditor(validator);
     }
 
     [ObservableProperty] private Bitmap? _previewImage;
@@ -107,6 +110,9 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
     [ObservableProperty] private long _imageLabGrainSeed;
 
     internal ArtworkDefinition Artwork => _artwork;
+    public ObservableCollection<ArtworkLayerItem> LayerItems { get; } = [];
+    public ObservableCollection<MaskSourceOption> MaskSources { get; } = [];
+    public ObservableCollection<LayerGroupOption> GroupOptions { get; } = [];
     public ObservableCollection<VariationCandidateItem> VariationCandidates { get; } = [];
     public IReadOnlyList<FavoriteVariationDefinition> Favorites => _artwork.Exploration.Favorites;
     public IReadOnlyList<ArtworkPresetDefinition> ArtworkPresets => _presetCatalog.ArtworkPresets;
@@ -117,19 +123,130 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
     public IReadOnlyList<ArtworkPresetDefinition> LSystemExamples =>
         _presetCatalog.ArtworkPresets.Where(item => item.GeneratorKind == FractalGeneratorKind.LSystem).ToArray();
     public IReadOnlyList<PalettePresetDefinition> PalettePresets => _presetCatalog.PalettePresets;
-    public bool IsEscapeTimeFamily => _artwork.GeneratorFamily == GeneratorFamily.EscapeTime;
-    public bool IsLSystemFamily => _artwork.GeneratorFamily == GeneratorFamily.LSystem;
-    public bool IsJuliaGenerator => _artwork.GeneratorKind == FractalGeneratorKind.Julia;
-    public bool IsMandelbrotGenerator => _artwork.GeneratorKind == FractalGeneratorKind.Mandelbrot;
-    public bool IsLSystemGenerator => _artwork.GeneratorKind == FractalGeneratorKind.LSystem;
-    public bool IsRecursiveTreeGenerator => _artwork.GeneratorKind == FractalGeneratorKind.RecursiveTree;
-    public bool IsSeedControlVisible => IsJuliaGenerator || IsRecursiveTreeGenerator;
-    public string GeneratorKindName => _artwork.GeneratorKind switch
+    public ArtworkLayerDefinition SelectedLayer =>
+        ArtworkLayerTree.Find(_artwork.Layers, _artwork.Presentation.SelectedLayerId) ?? _artwork.SelectedFractalLayer;
+    public bool IsFractalLayerSelected => SelectedLayer is FractalLayerDefinition;
+    public bool IsGroupSelected => SelectedLayer is LayerGroupDefinition;
+    public bool CanMoveSelectedIntoGroup => IsFractalLayerSelected && GroupOptions.Count > 0;
+    public bool CanMoveSelectedOutOfGroup => _artwork.Layers.OfType<LayerGroupDefinition>()
+        .Any(group => group.Children.Any(child => child.Id == SelectedLayer.Id));
+    public string SelectedLayerName
     {
-        FractalGeneratorKind.Julia => "时间逃逸 · Julia",
-        FractalGeneratorKind.Mandelbrot => "时间逃逸 · Mandelbrot",
-        FractalGeneratorKind.LSystem => "递归路径 · L-System",
-        _ => "递归路径 · 递归树（兼容）"
+        get => SelectedLayer.Name;
+        set
+        {
+            if (!string.IsNullOrWhiteSpace(value) && value != SelectedLayer.Name)
+            {
+                UpdateSelectedLayer(SelectedLayer switch
+                {
+                    FractalLayerDefinition fractal => fractal with { Name = value.Trim() },
+                    LayerGroupDefinition group => group with { Name = value.Trim() },
+                    UnavailableLayerDefinition unavailable => unavailable with { Name = value.Trim() },
+                    _ => SelectedLayer
+                });
+            }
+        }
+    }
+
+    public bool SelectedLayerVisible
+    {
+        get => SelectedLayer.IsVisible;
+        set => UpdateSelectedLayer(SelectedLayer switch
+        {
+            FractalLayerDefinition fractal => fractal with { IsVisible = value },
+            LayerGroupDefinition group => group with { IsVisible = value },
+            UnavailableLayerDefinition unavailable => unavailable with { IsVisible = value },
+            _ => SelectedLayer
+        });
+    }
+
+    public double SelectedLayerOpacity
+    {
+        get => SelectedLayer.Opacity;
+        set => UpdateSelectedCommon(opacity: value);
+    }
+
+    public string SelectedBlendMode
+    {
+        get => BlendModeLabel(SelectedLayer.BlendMode);
+        set
+        {
+            var mode = value switch
+            {
+                "Multiply（正片叠底）" => LayerBlendMode.Multiply,
+                "Screen（滤色）" => LayerBlendMode.Screen,
+                "Add（相加）" => LayerBlendMode.Add,
+                "Overlay（叠加）" => LayerBlendMode.Overlay,
+                _ => LayerBlendMode.Normal
+            };
+            UpdateSelectedCommon(blendMode: mode);
+        }
+    }
+
+    public IReadOnlyList<string> BlendModeOptions { get; } =
+        ["Normal（正常）", "Multiply（正片叠底）", "Screen（滤色）", "Add（相加）", "Overlay（叠加）"];
+
+    public double LayerPositionX { get => SelectedLayer.Transform.PositionXPercent; set => UpdateTransform(t => t with { PositionXPercent = value }); }
+    public double LayerPositionY { get => SelectedLayer.Transform.PositionYPercent; set => UpdateTransform(t => t with { PositionYPercent = value }); }
+    public double LayerScale { get => SelectedLayer.Transform.ScalePercent; set => UpdateTransform(t => t with { ScalePercent = value }); }
+    public double LayerRotation { get => SelectedLayer.Transform.RotationDegrees; set => UpdateTransform(t => t with { RotationDegrees = value }); }
+    public double LayerAnchorX { get => SelectedLayer.Transform.AnchorXPercent; set => UpdateTransform(t => t with { AnchorXPercent = value }); }
+    public double LayerAnchorY { get => SelectedLayer.Transform.AnchorYPercent; set => UpdateTransform(t => t with { AnchorYPercent = value }); }
+
+    public MaskSourceOption? SelectedMaskSource
+    {
+        get => SelectedLayer.Mask is null
+            ? MaskSources.FirstOrDefault(option => option.Id.Length == 0)
+            : MaskSources.FirstOrDefault(option => option.Id == SelectedLayer.Mask.SourceLayerId);
+        set
+        {
+            var mask = value is null || value.Id.Length == 0
+                ? null
+                : SelectedLayer.Mask is { } current && current.SourceLayerId == value.Id
+                    ? current
+                    : new ScalarMaskDefinition(value.Id, 0.5, 0.1, false);
+            UpdateSelectedCommon(mask: mask, setMask: true);
+        }
+    }
+
+    public double MaskThreshold
+    {
+        get => SelectedLayer.Mask?.Threshold ?? 0.5;
+        set { if (SelectedLayer.Mask is { } mask) UpdateSelectedCommon(mask: mask with { Threshold = value }, setMask: true); }
+    }
+
+    public double MaskSoftness
+    {
+        get => SelectedLayer.Mask?.Softness ?? 0.1;
+        set { if (SelectedLayer.Mask is { } mask) UpdateSelectedCommon(mask: mask with { Softness = value }, setMask: true); }
+    }
+
+    public bool MaskInverted
+    {
+        get => SelectedLayer.Mask?.IsInverted ?? false;
+        set { if (SelectedLayer.Mask is { } mask) UpdateSelectedCommon(mask: mask with { IsInverted = value }, setMask: true); }
+    }
+
+    public bool HasSelectedMask => SelectedLayer.Mask is not null;
+    public LayerGroupOption? SelectedTargetGroup { get; set; }
+    public bool IsEscapeTimeFamily => IsFractalLayerSelected && _artwork.GeneratorFamily == GeneratorFamily.EscapeTime;
+    public bool IsLSystemFamily => IsFractalLayerSelected && _artwork.GeneratorFamily == GeneratorFamily.LSystem;
+    public bool IsJuliaGenerator => IsFractalLayerSelected && _artwork.GeneratorKind == FractalGeneratorKind.Julia;
+    public bool IsMandelbrotGenerator => IsFractalLayerSelected && _artwork.GeneratorKind == FractalGeneratorKind.Mandelbrot;
+    public bool IsLSystemGenerator => IsFractalLayerSelected && _artwork.GeneratorKind == FractalGeneratorKind.LSystem;
+    public bool IsRecursiveTreeGenerator => IsFractalLayerSelected && _artwork.GeneratorKind == FractalGeneratorKind.RecursiveTree;
+    public bool IsSeedControlVisible => IsJuliaGenerator || IsRecursiveTreeGenerator;
+    public string GeneratorKindName => SelectedLayer switch
+    {
+        LayerGroupDefinition => "分组属性",
+        UnavailableLayerDefinition unavailable => $"不可用图层 · {unavailable.TypeId} v{unavailable.Version}",
+        _ => _artwork.GeneratorKind switch
+        {
+            FractalGeneratorKind.Julia => "时间逃逸 · Julia",
+            FractalGeneratorKind.Mandelbrot => "时间逃逸 · Mandelbrot",
+            FractalGeneratorKind.LSystem => "递归路径 · L-System",
+            _ => "递归路径 · 递归树（兼容）"
+        }
     };
 
     /// <summary>
@@ -459,6 +576,20 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
             : _artwork with { Presentation = _artwork.Presentation with { HighQualityPreview = value } });
     }
 
+    private ToneEffectDefinition ToneEffect => _artwork.MasterEffects.Effects.OfType<ToneEffectDefinition>().FirstOrDefault() ??
+        new ToneEffectDefinition(false, 0, 0, 1);
+    private BloomEffectDefinition BloomEffect => _artwork.MasterEffects.Effects.OfType<BloomEffectDefinition>().FirstOrDefault() ??
+        new BloomEffectDefinition(false, 0.72, 2.4, 0.8);
+
+    public bool ToneEnabled { get => ToneEffect.IsEnabled; set => UpdateMasterEffect(ToneEffect with { IsEnabled = value }); }
+    public double ToneBrightness { get => ToneEffect.Brightness; set => UpdateMasterEffect(ToneEffect with { Brightness = value }); }
+    public double ToneContrast { get => ToneEffect.Contrast; set => UpdateMasterEffect(ToneEffect with { Contrast = value }); }
+    public double ToneSaturation { get => ToneEffect.Saturation; set => UpdateMasterEffect(ToneEffect with { Saturation = value }); }
+    public bool MasterBloomEnabled { get => BloomEffect.IsEnabled; set => UpdateMasterEffect(BloomEffect with { IsEnabled = value }); }
+    public double MasterBloomThreshold { get => BloomEffect.Threshold; set => UpdateMasterEffect(BloomEffect with { Threshold = value }); }
+    public double MasterBloomSigma { get => BloomEffect.Sigma; set => UpdateMasterEffect(BloomEffect with { Sigma = value }); }
+    public double MasterBloomStrength { get => BloomEffect.Strength; set => UpdateMasterEffect(BloomEffect with { Strength = value }); }
+
     public event EventHandler? PresentationChanged;
     public event EventHandler? IsDirtyChanged;
 
@@ -704,6 +835,72 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
             Mutate(_artwork.WithGeneratorKind(parsed));
         }
     }
+
+    [RelayCommand]
+    private void AddLayer(string? kind)
+    {
+        if (!Enum.TryParse<FractalGeneratorKind>(kind, out var parsed))
+        {
+            return;
+        }
+
+        TryLayerOperation(() => _layerEditor.AddFractal(_artwork, parsed));
+    }
+
+    [RelayCommand]
+    private void AddGroup() => TryLayerOperation(() => _layerEditor.AddGroup(_artwork));
+
+    [RelayCommand]
+    private void SelectLayer(ArtworkLayerItem? item)
+    {
+        if (item is null || item.Id == _artwork.Presentation.SelectedLayerId)
+        {
+            return;
+        }
+
+        CancelVariationWork();
+        Mutate(_artwork.SelectLayer(item.Id), recordHistory: false, renderPreview: false);
+        RefreshVariationPresentationAfterHistory();
+    }
+
+    [RelayCommand]
+    private void ToggleLayerVisibility(ArtworkLayerItem? item)
+    {
+        if (item is null || ArtworkLayerTree.Find(_artwork.Layers, item.Id) is not { } layer)
+        {
+            return;
+        }
+
+        var replacement = layer switch
+        {
+            FractalLayerDefinition fractal => fractal with { IsVisible = !fractal.IsVisible },
+            LayerGroupDefinition group => group with { IsVisible = !group.IsVisible },
+            UnavailableLayerDefinition unavailable => unavailable with { IsVisible = !unavailable.IsVisible },
+            _ => layer
+        };
+        TryLayerOperation(() => _layerEditor.Update(_artwork, replacement));
+    }
+
+    [RelayCommand]
+    private void MoveLayerUp() => TryLayerOperation(() => _layerEditor.Move(_artwork, SelectedLayer.Id, -1));
+
+    [RelayCommand]
+    private void MoveLayerDown() => TryLayerOperation(() => _layerEditor.Move(_artwork, SelectedLayer.Id, 1));
+
+    [RelayCommand]
+    private void DeleteLayer() => TryLayerOperation(() => _layerEditor.Delete(_artwork, SelectedLayer.Id));
+
+    [RelayCommand]
+    private void MoveIntoGroup()
+    {
+        if (SelectedTargetGroup is { } group)
+        {
+            TryLayerOperation(() => _layerEditor.MoveIntoGroup(_artwork, SelectedLayer.Id, group.Id));
+        }
+    }
+
+    [RelayCommand]
+    private void MoveOutOfGroup() => TryLayerOperation(() => _layerEditor.MoveOutOfGroup(_artwork, SelectedLayer.Id));
 
     [RelayCommand]
     private void SetVariationMode(string? mode)
@@ -1073,6 +1270,139 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         }
     }
 
+    private void TryLayerOperation(Func<ArtworkDefinition> operation)
+    {
+        try
+        {
+            Mutate(operation());
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or InvalidDataException)
+        {
+            StatusMessage = exception.Message;
+        }
+    }
+
+    private void UpdateSelectedLayer(ArtworkLayerDefinition replacement) =>
+        TryLayerOperation(() => _layerEditor.Update(_artwork, replacement));
+
+    private void UpdateSelectedCommon(
+        double? opacity = null,
+        LayerBlendMode? blendMode = null,
+        ScalarMaskDefinition? mask = null,
+        bool setMask = false,
+        LayerTransformDefinition? transform = null)
+    {
+        var current = SelectedLayer;
+        var replacement = current switch
+        {
+            FractalLayerDefinition fractal => fractal with
+            {
+                Opacity = opacity ?? fractal.Opacity,
+                BlendMode = blendMode ?? fractal.BlendMode,
+                Mask = setMask ? mask : fractal.Mask,
+                Transform = transform ?? fractal.Transform
+            },
+            LayerGroupDefinition group => group with
+            {
+                Opacity = opacity ?? group.Opacity,
+                BlendMode = blendMode ?? group.BlendMode,
+                Mask = setMask ? mask : group.Mask,
+                Transform = transform ?? group.Transform
+            },
+            UnavailableLayerDefinition unavailable => unavailable with
+            {
+                Opacity = opacity ?? unavailable.Opacity,
+                BlendMode = blendMode ?? unavailable.BlendMode,
+                Mask = setMask ? mask : unavailable.Mask,
+                Transform = transform ?? unavailable.Transform
+            },
+            _ => current
+        };
+        UpdateSelectedLayer(replacement);
+    }
+
+    private void UpdateTransform(Func<LayerTransformDefinition, LayerTransformDefinition> update) =>
+        UpdateSelectedCommon(transform: update(SelectedLayer.Transform));
+
+    private void UpdateMasterEffect(ArtworkEffectDefinition replacement)
+    {
+        var effects = _artwork.MasterEffects.Effects.ToList();
+        var index = effects.FindIndex(effect => effect.TypeId == replacement.TypeId);
+        if (index >= 0)
+        {
+            effects[index] = replacement;
+        }
+        else if (replacement is ToneEffectDefinition)
+        {
+            // 宽容读取的 v7 文件可能暂时没有已知 Tone。编辑时按规范位置补入，而不是丢弃用户操作。
+            var bloomIndex = effects.FindIndex(effect => effect is BloomEffectDefinition);
+            effects.Insert(bloomIndex < 0 ? 0 : bloomIndex, replacement);
+        }
+        else if (replacement is BloomEffectDefinition)
+        {
+            var lastTone = effects.FindLastIndex(effect => effect is ToneEffectDefinition);
+            effects.Insert(lastTone + 1, replacement);
+        }
+
+        TryMutate(_artwork with
+        {
+            MasterEffects = new EffectChainDefinition(_artwork.MasterEffects.Version, effects)
+        });
+    }
+
+    private static string BlendModeLabel(LayerBlendMode mode) => mode switch
+    {
+        LayerBlendMode.Multiply => "Multiply（正片叠底）",
+        LayerBlendMode.Screen => "Screen（滤色）",
+        LayerBlendMode.Add => "Add（相加）",
+        LayerBlendMode.Overlay => "Overlay（叠加）",
+        _ => "Normal（正常）"
+    };
+
+    private void RefreshLayerItems()
+    {
+        LayerItems.Clear();
+        MaskSources.Clear();
+        GroupOptions.Clear();
+        MaskSources.Add(new MaskSourceOption(string.Empty, "无遮罩"));
+        foreach (var layer in _artwork.Layers)
+        {
+            LayerItems.Add(CreateLayerItem(layer, false));
+            if (layer is LayerGroupDefinition group)
+            {
+                GroupOptions.Add(new LayerGroupOption(group.Id, group.Name));
+                foreach (var child in group.Children)
+                {
+                    LayerItems.Add(CreateLayerItem(child, true));
+                }
+            }
+        }
+
+        foreach (var source in ArtworkLayerTree.EnumerateFractals(_artwork.Layers)
+                     .Where(layer => layer.GeneratorKind is FractalGeneratorKind.Julia or FractalGeneratorKind.Mandelbrot &&
+                                     layer.Id != SelectedLayer.Id))
+        {
+            MaskSources.Add(new MaskSourceOption(source.Id, source.Name));
+        }
+
+        SelectedTargetGroup = GroupOptions.FirstOrDefault();
+    }
+
+    private static ArtworkLayerItem CreateLayerItem(ArtworkLayerDefinition layer, bool isChild) => new(
+        layer.Id,
+        layer.Name,
+        layer.IsVisible,
+        layer is LayerGroupDefinition,
+        isChild,
+        layer switch
+        {
+            FractalLayerDefinition fractal => fractal.GeneratorKind.ToString(),
+            LayerGroupDefinition => "Group",
+            UnavailableLayerDefinition unavailable => $"Unavailable: {unavailable.TypeId} v{unavailable.Version}",
+            _ => "Unknown"
+        },
+        BlendModeLabel(layer.BlendMode));
+
     private void Mutate(ArtworkDefinition candidate, bool recordHistory = true, bool renderPreview = true)
     {
         ThrowIfDisposed();
@@ -1339,6 +1669,27 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
 
     private void NotifyArtworkProperties()
     {
+        RefreshLayerItems();
+        OnPropertyChanged(nameof(SelectedLayer));
+        OnPropertyChanged(nameof(IsFractalLayerSelected));
+        OnPropertyChanged(nameof(IsGroupSelected));
+        OnPropertyChanged(nameof(CanMoveSelectedIntoGroup));
+        OnPropertyChanged(nameof(CanMoveSelectedOutOfGroup));
+        OnPropertyChanged(nameof(SelectedLayerName));
+        OnPropertyChanged(nameof(SelectedLayerVisible));
+        OnPropertyChanged(nameof(SelectedLayerOpacity));
+        OnPropertyChanged(nameof(SelectedBlendMode));
+        OnPropertyChanged(nameof(LayerPositionX));
+        OnPropertyChanged(nameof(LayerPositionY));
+        OnPropertyChanged(nameof(LayerScale));
+        OnPropertyChanged(nameof(LayerRotation));
+        OnPropertyChanged(nameof(LayerAnchorX));
+        OnPropertyChanged(nameof(LayerAnchorY));
+        OnPropertyChanged(nameof(SelectedMaskSource));
+        OnPropertyChanged(nameof(MaskThreshold));
+        OnPropertyChanged(nameof(MaskSoftness));
+        OnPropertyChanged(nameof(MaskInverted));
+        OnPropertyChanged(nameof(HasSelectedMask));
         OnPropertyChanged(nameof(CanvasWidth));
         OnPropertyChanged(nameof(CanvasHeight));
         OnPropertyChanged(nameof(BackgroundHex));
@@ -1382,6 +1733,14 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         OnPropertyChanged(nameof(GradientStartHex));
         OnPropertyChanged(nameof(GradientEndHex));
         OnPropertyChanged(nameof(HighQualityPreview));
+        OnPropertyChanged(nameof(ToneEnabled));
+        OnPropertyChanged(nameof(ToneBrightness));
+        OnPropertyChanged(nameof(ToneContrast));
+        OnPropertyChanged(nameof(ToneSaturation));
+        OnPropertyChanged(nameof(MasterBloomEnabled));
+        OnPropertyChanged(nameof(MasterBloomThreshold));
+        OnPropertyChanged(nameof(MasterBloomSigma));
+        OnPropertyChanged(nameof(MasterBloomStrength));
         OnPropertyChanged(nameof(MutationStrength));
         OnPropertyChanged(nameof(IsSeedLocked));
         OnPropertyChanged(nameof(IsCompositionLocked));

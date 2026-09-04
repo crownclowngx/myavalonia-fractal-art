@@ -1,9 +1,9 @@
 # Fractal Art 插件形态、产品定位与闭环实施计划
 
-> 文档状态：产品与实施基线；G0001–G0006（含 G0003 高精度性能专项）已完成代码与本地自动化门禁，真实 Host 与其余人工验收待完成
+> 文档状态：产品与实施基线；G0001–G0008（含 G0003 高精度性能专项）已完成代码与本地自动化门禁，真实 Host 与其余人工验收待完成
 > 插件持久身份：`myavalonia.plugin.fractal.art`  
 > 产品显示名：Fractal Art / 分形画室  
-> 当前工程状态：已完成产品化模板、持久化闭环、变体探索、Julia/Mandelbrot、可编辑 L-System 与 G0006 内部创作图
+> 当前工程状态：已完成产品化模板、四类生成器、v7 多图层/遮罩合成、实时 Master Effects 与 G0007 Workflow 双角色
 > 本文范围：定义产品形态、能力边界、跨插件关系，以及以 `Gxxxx` 编号推进的实施顺序
 
 > 实施档案：每个阶段的当下计划、实施方案、结果与未完成的人工验收独立归档在
@@ -24,7 +24,7 @@
 
 ### 2.1 Fractal Art 当前形态
 
-截至 2026-09-04，项目已经完成 G0001–G0006：
+截至 2026-09-04，项目已经完成 G0001–G0008：
 
 - `FractalArtPlugin.Plugin` 是唯一真实插件程序集和正式交付物；
 - `FractalArtPlugin.Standalone` 通过独立 Scope 承载同一套真实 View、Document 和业务服务；
@@ -43,13 +43,14 @@
 - G0004 提供 3 个视觉预设、3 个调色板和“细节/流动/卷曲”艺术参数；艺术参数直接映射 Julia 真实参数，
   不保存第二份状态；
 - 变体探索支持 9 个确定性候选、强度、只变形态/只变质感、Seed/构图/形态/颜色锁定、收藏、恢复与续变；
-- 候选配方和收藏随当前 v6 作品快照保存，缩略图使用最多 3 路并发、Document Scope 节点缓存和整批取消提交；
+- 候选配方和收藏按层随当前 v7 作品快照保存，缩略图使用最多 3 路并发、Document Scope 节点缓存和整批取消提交；
 - G0005 增加确定性递归树、带层级路径几何、CPU 分层描边，以及翡翠生长/月下银枝两个“植物与生长”预设；
 - 作品格式升级到 v4，保存生成器、树参数及候选路径配方，v1/v2/v3 显式迁移为 Julia；
 - G0005.1 增加时间逃逸/L-System 导航、Mandelbrot 双精度与任意精度内核、受预算规则展开和 Turtle 路径解释；
 - G0006 增加版本化类型安全创作图、空效果链、只读图像/遮罩，以及每个 Document 独占的有界 LRU 节点缓存；
 - G0007 增加会话级 ImageLab 导出参数、文件式内部后处理，以及供 Studio 使用的 Render/Release Action；
-- 当前本地自动化共 126 项测试通过；G0003 Release 输出指纹基准和四类代表 RGBA 指纹保持稳定；
+- G0008 已实现最多 8 个分形层、4 个单层组、跨分形 ScalarField 遮罩、完整二维变换、五种混合以及实时 Tone/Bloom；
+- 当前本地 Debug 自动化共 149 项测试通过；G0003 Release 输出指纹基准和四类代表 RGBA 指纹保持稳定；
 - 当前仍没有 Tool、Workbench Command、默认快捷键或实时 ImageLab 预览。
 
 阶段实施事实、自动化证据和待人工验收见 [`docs/refactoring`](refactoring/README.md)。
@@ -781,7 +782,7 @@ L-System
 - 使用 File Artifact v1 和 ImageLab Provider Action 传输文件，不共享插件二进制；
 - Fractal Art 以 Consumer 身份提供“经 ImageLab 导出”，同时提供 Render/Release Provider Action；
 - Studio 继续使用 Definition v2 顺序编排三个既有 Action，不修改生产代码；
-- 效果只在导出时应用，不进入 ArtworkSnapshot v6，也不提供实时预览；
+- G0007 ImageLab 效果只在导出时应用，不进入 ArtworkSnapshot v7，也不提供实时预览；
 - ImageLab 未安装时普通创作、保存和原始 PNG 导出继续可用。
 
 **内部链路**
@@ -808,6 +809,8 @@ Fractal 最终质量 PNG
 
 ### G0008：多图层、遮罩与跨分形组合
 
+> 当前状态（2026-09-04）：代码、v7 持久化迁移、149 项本地 Debug 自动化测试、Standalone 启动烟雾和专用文档完成；真实 Host 与人工视觉验收待完成。详见[计划](refactoring/G0008/plan.md)、[合成设计](refactoring/G0008/composition-design.md)、[实施方案](refactoring/G0008/implementation.md)和[实施结果](refactoring/G0008/result.md)。
+
 **目标**
 
 从单生成器作品演进为非破坏性的分形合成画布。
@@ -817,7 +820,7 @@ Fractal 最终质量 PNG
 - 实现图层、可见性、顺序、不透明度和混合模式；
 - 实现遮罩、分组和 Master Effects；
 - 允许 `ScalarField` 转换为 Mask；
-- 允许一个分形输出驱动另一个图层的效果参数或遮罩；
+- 允许 Julia/Mandelbrot 的原始 ScalarField 驱动另一个图层或组的遮罩；
 - 建立图层级撤销、缓存、保存和缺失能力处理；
 - 为复杂作品提供安全的资源预算。
 

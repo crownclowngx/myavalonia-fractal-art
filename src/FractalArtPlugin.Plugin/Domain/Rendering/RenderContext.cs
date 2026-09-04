@@ -49,6 +49,29 @@ public sealed record RenderContext(
 
     public static RenderContext ForExport(ArtworkDefinition artwork) => Create(artwork, RenderQuality.Final);
 
+    /// <summary>
+    /// 合成帧先确定统一像素尺寸，再为每个分形层独立选择数值精度。这样深缩放层不会迫使路径层携带伪精度，
+    /// 也不会错误沿用当前 UI 选中层的 Julia/Mandelbrot 策略。
+    /// </summary>
+    public static RenderContext ForLayer(
+        ArtworkDefinition artwork,
+        FractalLayerDefinition layer,
+        RenderContext frame)
+    {
+        var selected = artwork.SelectLayer(layer.Id);
+        var resolved = Create(selected, frame.Quality);
+        return resolved with
+        {
+            Width = frame.Width,
+            Height = frame.Height,
+            RendererVersion = frame.RendererVersion,
+            MaxDegreeOfParallelism = frame.MaxDegreeOfParallelism,
+            ChunkHeight = frame.ChunkHeight,
+            CancellationCheckInterval = frame.CancellationCheckInterval,
+            KernelPreference = frame.KernelPreference
+        };
+    }
+
     private static RenderContext Create(ArtworkDefinition artwork, RenderQuality quality)
     {
         ArgumentNullException.ThrowIfNull(artwork);

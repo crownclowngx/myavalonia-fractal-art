@@ -17,7 +17,9 @@ public static class FractalArtPluginServices
         ArgumentNullException.ThrowIfNull(services);
 
         services.AddSingleton<IArtworkGraphValidator, ArtworkGraphValidator>();
-        services.AddSingleton<IArtworkValidator, ArtworkValidator>();
+        services.AddSingleton<ArtworkValidator>();
+        services.AddSingleton<IArtworkValidator>(provider => provider.GetRequiredService<ArtworkValidator>());
+        services.AddSingleton<IArtworkRenderabilityValidator>(provider => provider.GetRequiredService<ArtworkValidator>());
         services.AddSingleton<IArtworkSnapshotCodec, ArtworkSnapshotCodec>();
         services.AddSingleton<IJuliaFieldGenerator, JuliaFieldGenerator>();
         services.AddSingleton<IMandelbrotFieldGenerator, MandelbrotFieldGenerator>();
@@ -27,6 +29,10 @@ public static class FractalArtPluginServices
         services.AddSingleton<ITurtlePathInterpreter, TurtlePathInterpreter>();
         services.AddSingleton<IRecursiveTreePathGenerator, RecursiveTreePathGenerator>();
         services.AddSingleton<IPathStrokeRenderer, PathStrokeRenderer>();
+        services.AddSingleton<IScalarMaskConverter, ScalarMaskConverter>();
+        services.AddSingleton<ILayerRasterTransformer, LayerRasterTransformer>();
+        services.AddSingleton<ILayerCompositor, LayerCompositor>();
+        services.AddSingleton<IMasterEffectRenderer, MasterEffectRenderer>();
         services.AddSingleton<IArtworkGraphNodeExecutor, JuliaFieldNodeExecutor>();
         services.AddSingleton<IArtworkGraphNodeExecutor, MandelbrotFieldNodeExecutor>();
         services.AddSingleton<IArtworkGraphNodeExecutor, RecursiveTreePathNodeExecutor>();
@@ -43,6 +49,7 @@ public static class FractalArtPluginServices
         services.AddSingleton<IVariationGenerator, VariationGenerator>();
         services.AddScoped<IVariationExplorer, VariationExplorer>();
         services.AddSingleton<IArtworkPresetCatalog, ArtworkPresetCatalog>();
+        services.AddSingleton<IArtworkLayerEditor, ArtworkLayerEditor>();
         services.AddSingleton<IPngEncoder, PngEncoder>();
         services.AddSingleton<IAtomicFileWriter, AtomicFileWriter>();
         services.AddScoped<IArtworkExporter, ArtworkExporter>();

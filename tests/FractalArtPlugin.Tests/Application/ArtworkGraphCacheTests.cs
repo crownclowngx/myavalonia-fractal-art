@@ -31,7 +31,7 @@ public sealed class ArtworkGraphCacheTests
         Assert.False(cold.Execution.FullyFromCache);
         Assert.True(warm.Execution.FullyFromCache);
         Assert.False(recolored.Execution.FullyFromCache);
-        Assert.Contains("generator", recolored.Execution.CacheHitNodeIds);
+        Assert.Contains("layer-1-generator", recolored.Execution.CacheHitNodeIds);
         Assert.Equal(1, field.CallCount);
         Assert.Equal(2, gradient.CallCount);
     }
@@ -52,7 +52,7 @@ public sealed class ArtworkGraphCacheTests
 
         await pipeline.RenderAsync(artwork, original, CancellationToken.None);
         await pipeline.RenderAsync(
-            artwork with { Julia = artwork.Julia with { ConstantReal = "-0.7" } },
+            artwork with { Julia = artwork.Julia with { ConstantReal = "-0.61" } },
             original,
             CancellationToken.None);
         await pipeline.RenderAsync(artwork, original with { Width = 65 }, CancellationToken.None);
@@ -90,7 +90,7 @@ public sealed class ArtworkGraphCacheTests
 
         Assert.Equal(2, paths.CallCount);
         Assert.Equal(4, strokes.CallCount);
-        Assert.Contains("generator", second.Execution.CacheHitNodeIds);
+        Assert.Contains("layer-1-generator", second.Execution.CacheHitNodeIds);
     }
 
     [Fact]
@@ -129,7 +129,7 @@ public sealed class ArtworkGraphCacheTests
 
         var error = await Assert.ThrowsAsync<ArtworkGraphExecutionException>(() =>
             pipeline.RenderAsync(artwork, context, CancellationToken.None));
-        Assert.Equal("generator", error.NodeId);
+        Assert.Equal("layer-1-generator", error.NodeId);
         Assert.Contains("JuliaField", error.Message, StringComparison.Ordinal);
         Assert.Equal(0, cache.Count);
 

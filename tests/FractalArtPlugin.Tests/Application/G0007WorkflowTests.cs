@@ -11,10 +11,21 @@ namespace FractalArtPlugin.Tests;
 public sealed class G0007WorkflowTests
 {
     [Fact]
-    public void 配方v1往返复用ArtworkSnapshotV6且不丢失作品状态()
+    public void 配方外层v1嵌入ArtworkV7多层作品且不丢失状态()
     {
         var codec = CreateRecipeCodec();
-        var expected = ArtworkDefinition.CreateDefault() with { Seed = 987654321 };
+        var validator = new ArtworkValidator();
+        var editor = new ArtworkLayerEditor(validator);
+        var expected = editor.AddFractal(
+            ArtworkDefinition.CreateDefault() with { Seed = 987654321 },
+            FractalGeneratorKind.Mandelbrot) with
+        {
+            MasterEffects = new EffectChainDefinition(1,
+            [
+                new ToneEffectDefinition(true, 0.1, 0.2, 1.1),
+                new BloomEffectDefinition(false, 0.72, 2.4, 0.8)
+            ])
+        };
 
         var actual = codec.Decode(codec.Encode(expected));
 
@@ -22,10 +33,10 @@ public sealed class G0007WorkflowTests
     }
 
     [Theory]
-    [InlineData("{\"schemaVersion\":2,\"artworkSchemaVersion\":6,\"artwork\":{}}")]
-    [InlineData("{\"schemaVersion\":1,\"artworkSchemaVersion\":6,\"artwork\":{},\"extra\":true}")]
-    [InlineData("{\"schemaVersion\":1,\"schemaVersion\":1,\"artworkSchemaVersion\":6,\"artwork\":{}}")]
-    [InlineData("{\"schemaVersion\":1,\"artworkSchemaVersion\":6}")]
+    [InlineData("{\"schemaVersion\":2,\"artworkSchemaVersion\":1,\"artwork\":{}}")]
+    [InlineData("{\"schemaVersion\":1,\"artworkSchemaVersion\":1,\"artwork\":{},\"extra\":true}")]
+    [InlineData("{\"schemaVersion\":1,\"schemaVersion\":1,\"artworkSchemaVersion\":1,\"artwork\":{}}")]
+    [InlineData("{\"schemaVersion\":1,\"artworkSchemaVersion\":1}")]
     public void 配方拒绝未知版本未知字段重复字段和缺失字段(string json)
     {
         Assert.ThrowsAny<Exception>(() => CreateRecipeCodec().Decode(Encoding.UTF8.GetBytes(json)));

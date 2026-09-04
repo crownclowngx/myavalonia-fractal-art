@@ -19,18 +19,45 @@
 
     <Grid Grid.Row="1" ColumnDefinitions="190,*,380">
       <Border Grid.Column="0" Padding="12" Background="#0E1425" BorderBrush="#27304A" BorderThickness="0,0,1,0">
-        <StackPanel Spacing="8">
-          <TextBlock Margin="4,0,0,8" FontSize="12" Foreground="#8791AD" Text="生成方式" />
-          <TextBlock Margin="4,4" FontWeight="SemiBold" Foreground="#D4DAED" Text="时间逃逸" />
-          <Button HorizontalContentAlignment="Left" Command="{Binding SelectGeneratorCommand}" CommandParameter="Julia" Content="Julia" />
-          <Button HorizontalContentAlignment="Left" Command="{Binding SelectGeneratorCommand}" CommandParameter="Mandelbrot" Content="Mandelbrot" />
-          <TextBlock Margin="4,12,4,4" FontWeight="SemiBold" Foreground="#D4DAED" Text="L-System" />
-          <Button HorizontalContentAlignment="Left" Command="{Binding SelectGeneratorCommand}" CommandParameter="LSystem" Content="L-System" />
-          <Button HorizontalContentAlignment="Left" Command="{Binding SelectGeneratorCommand}" CommandParameter="RecursiveTree" Content="递归树（兼容）" />
-          <Border Margin="0,12,0,0" Padding="10" Background="#182038" CornerRadius="6">
-            <TextBlock Foreground="#AEB8D2" Text="先选数据形态，再在右侧只编辑当前生成器。经典示例只是起点，所有参数都可继续自定义。" TextWrapping="Wrap" />
-          </Border>
-        </StackPanel>
+        <Grid RowDefinitions="Auto,*,Auto" RowSpacing="8">
+          <StackPanel Grid.Row="0" Spacing="6">
+            <TextBlock Margin="4,0,0,4" FontSize="12" Foreground="#8791AD" Text="图层（最上层在前）" />
+            <WrapPanel>
+              <Button Margin="0,0,4,4" Padding="7,3" Command="{Binding AddLayerCommand}" CommandParameter="Julia" Content="+ Julia" />
+              <Button Margin="0,0,4,4" Padding="7,3" Command="{Binding AddLayerCommand}" CommandParameter="Mandelbrot" Content="+ Mandelbrot" />
+              <Button Margin="0,0,4,4" Padding="7,3" Command="{Binding AddLayerCommand}" CommandParameter="LSystem" Content="+ L-System" />
+              <Button Margin="0,0,4,4" Padding="7,3" Command="{Binding AddLayerCommand}" CommandParameter="RecursiveTree" Content="+ 递归树" />
+              <Button Margin="0,0,4,4" Padding="7,3" Command="{Binding AddGroupCommand}" Content="+ 分组" />
+            </WrapPanel>
+          </StackPanel>
+          <ScrollViewer Grid.Row="1">
+            <ItemsControl ItemsSource="{Binding LayerItems}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Border Margin="0,0,0,5" Padding="5" Background="#182038" CornerRadius="4">
+                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="4">
+                      <Button Grid.Column="0" Padding="5,2" Click="HandleToggleLayerVisibility" Content="{Binding VisibilityMark}" />
+                      <Button Grid.Column="1" HorizontalContentAlignment="Left" Padding="5,2" Click="HandleSelectLayer" Content="{Binding DisplayName}" />
+                      <TextBlock Grid.Column="2" VerticalAlignment="Center" FontSize="10" Foreground="#8791AD" Text="{Binding KindName}" />
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+          <StackPanel Grid.Row="2" Spacing="5">
+            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="4">
+              <Button Grid.Column="0" Command="{Binding MoveLayerUpCommand}" Content="上移" />
+              <Button Grid.Column="1" Command="{Binding MoveLayerDownCommand}" Content="下移" />
+              <Button Grid.Column="2" Command="{Binding DeleteLayerCommand}" Content="删除" />
+            </Grid>
+            <ComboBox ItemsSource="{Binding GroupOptions}" SelectedItem="{Binding SelectedTargetGroup}" PlaceholderText="目标分组" />
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="4">
+              <Button Grid.Column="0" Command="{Binding MoveIntoGroupCommand}" IsEnabled="{Binding CanMoveSelectedIntoGroup}" Content="移入组" />
+              <Button Grid.Column="1" Command="{Binding MoveOutOfGroupCommand}" IsEnabled="{Binding CanMoveSelectedOutOfGroup}" Content="移出组" />
+            </Grid>
+          </StackPanel>
+        </Grid>
       </Border>
 
       <Border
@@ -58,6 +85,35 @@
       <ScrollViewer Grid.Column="2" Background="#0E1425" BorderBrush="#27304A" BorderThickness="1,0,0,0">
         <StackPanel Margin="14" Spacing="10">
           <TextBlock FontSize="16" FontWeight="SemiBold" Foreground="#F2F5FF" Text="{Binding GeneratorKindName}" />
+
+          <Expander Header="当前图层与合成" IsExpanded="True">
+            <StackPanel Margin="0,8,0,0" Spacing="7">
+              <TextBox Text="{Binding SelectedLayerName}" PlaceholderText="图层名称" />
+              <CheckBox Foreground="#D4DAED" Content="可见" IsChecked="{Binding SelectedLayerVisible}" />
+              <TextBlock Foreground="#BFC7DB" Text="不透明度" />
+              <Slider Minimum="0" Maximum="1" TickFrequency="0.05" Value="{Binding SelectedLayerOpacity}" />
+              <ComboBox ItemsSource="{Binding BlendModeOptions}" SelectedItem="{Binding SelectedBlendMode}" />
+              <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                <NumericUpDown Grid.Column="0" Minimum="-200" Maximum="200" Increment="1" Value="{Binding LayerPositionX}" PlaceholderText="位置 X %" />
+                <NumericUpDown Grid.Column="1" Minimum="-200" Maximum="200" Increment="1" Value="{Binding LayerPositionY}" PlaceholderText="位置 Y %" />
+              </Grid>
+              <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                <NumericUpDown Grid.Column="0" Minimum="1" Maximum="800" Increment="1" Value="{Binding LayerScale}" PlaceholderText="缩放 %" />
+                <NumericUpDown Grid.Column="1" Minimum="-180" Maximum="180" Increment="1" Value="{Binding LayerRotation}" PlaceholderText="旋转 °" />
+              </Grid>
+              <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                <NumericUpDown Grid.Column="0" Minimum="0" Maximum="100" Increment="1" Value="{Binding LayerAnchorX}" PlaceholderText="锚点 X %" />
+                <NumericUpDown Grid.Column="1" Minimum="0" Maximum="100" Increment="1" Value="{Binding LayerAnchorY}" PlaceholderText="锚点 Y %" />
+              </Grid>
+              <ComboBox ItemsSource="{Binding MaskSources}" SelectedItem="{Binding SelectedMaskSource}" PlaceholderText="ScalarField 遮罩源" />
+              <StackPanel IsVisible="{Binding HasSelectedMask}" Spacing="6">
+                <NumericUpDown Minimum="0" Maximum="1" Increment="0.01" Value="{Binding MaskThreshold}" PlaceholderText="遮罩阈值" />
+                <NumericUpDown Minimum="0" Maximum="1" Increment="0.01" Value="{Binding MaskSoftness}" PlaceholderText="遮罩柔化" />
+                <CheckBox Foreground="#D4DAED" Content="反相遮罩" IsChecked="{Binding MaskInverted}" />
+              </StackPanel>
+              <TextBlock Foreground="#8791AD" Text="位置和锚点相对画布保存；正角度顺时针旋转。" TextWrapping="Wrap" />
+            </StackPanel>
+          </Expander>
 
           <Expander Header="画布与渲染" IsExpanded="False">
             <StackPanel Margin="0,8,0,0" Spacing="7">
@@ -235,6 +291,20 @@
               </Grid>
               <Button Command="{Binding ExportWithImageLabCommand}" Content="经 ImageLab 导出 PNG" />
               <Button Command="{Binding ExportWorkflowRecipeCommand}" Content="导出 Workflow 配方" />
+            </StackPanel>
+          </Expander>
+
+          <Expander Header="Master Effects（作品内实时效果）" IsExpanded="False">
+            <StackPanel Margin="0,8,0,0" Spacing="7">
+              <CheckBox Foreground="#D4DAED" Content="Tone（色调）" IsChecked="{Binding ToneEnabled}" />
+              <NumericUpDown Minimum="-1" Maximum="1" Increment="0.05" Value="{Binding ToneBrightness}" PlaceholderText="亮度" />
+              <NumericUpDown Minimum="-1" Maximum="1" Increment="0.05" Value="{Binding ToneContrast}" PlaceholderText="对比度" />
+              <NumericUpDown Minimum="0" Maximum="2" Increment="0.05" Value="{Binding ToneSaturation}" PlaceholderText="饱和度" />
+              <CheckBox Foreground="#D4DAED" Content="Bloom（辉光）" IsChecked="{Binding MasterBloomEnabled}" />
+              <NumericUpDown Minimum="0" Maximum="1" Increment="0.01" Value="{Binding MasterBloomThreshold}" PlaceholderText="阈值" />
+              <NumericUpDown Minimum="0.1" Maximum="10" Increment="0.1" Value="{Binding MasterBloomSigma}" PlaceholderText="Sigma" />
+              <NumericUpDown Minimum="0" Maximum="4" Increment="0.1" Value="{Binding MasterBloomStrength}" PlaceholderText="强度" />
+              <TextBlock Foreground="#8791AD" Text="固定按 Tone → Bloom 执行，并随作品保存、撤销和导出。" TextWrapping="Wrap" />
             </StackPanel>
           </Expander>
 

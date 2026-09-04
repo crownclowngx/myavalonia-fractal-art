@@ -91,10 +91,23 @@ public sealed record ArtworkGraphDefinition
 }
 
 /// <summary>
-/// 未来具体效果的强类型基类。G0006 不提供任何派生效果，因而合法效果链只能为空；
-/// G0007 添加效果时必须增加明确派生记录和对应 DTO，不能退化为字符串参数袋。
+/// 效果的强类型基类。每个效果都携带稳定类型和版本；新增能力必须增加明确派生记录和对应 DTO，
+/// 不能退化为字符串参数袋。未知能力由不可用占位保留并在渲染边界统一阻止。
 /// </summary>
 public abstract record ArtworkEffectDefinition(string TypeId, int Version, bool IsEnabled);
+
+public sealed record ToneEffectDefinition(bool IsEnabled, double Brightness, double Contrast, double Saturation)
+    : ArtworkEffectDefinition("tone", 1, IsEnabled);
+
+public sealed record BloomEffectDefinition(bool IsEnabled, double Threshold, double Sigma, double Strength)
+    : ArtworkEffectDefinition("bloom", 1, IsEnabled);
+
+public sealed record UnavailableEffectDefinition(
+    string TypeId,
+    int Version,
+    bool IsEnabled,
+    string OpaquePayload)
+    : ArtworkEffectDefinition(TypeId, Version, IsEnabled);
 
 public sealed record EffectChainDefinition
 {
@@ -111,6 +124,9 @@ public sealed record EffectChainDefinition
     public IReadOnlyList<ArtworkEffectDefinition> Effects { get; }
 
     public static EffectChainDefinition Empty { get; } = new(CurrentVersion, []);
+
+    public static EffectChainDefinition CreateDefaultMaster() => new(CurrentVersion,
+        [new ToneEffectDefinition(false, 0, 0, 1), new BloomEffectDefinition(false, 0.72, 2.4, 0.8)]);
 
     public bool Equals(EffectChainDefinition? other) =>
         other is not null && Version == other.Version && Effects.SequenceEqual(other.Effects);
@@ -134,7 +150,12 @@ public sealed record EffectChainDefinition
 /// </summary>
 public static class ArtworkGraphFactory
 {
+    public static ArtworkGraphDefinition Create(FractalLayerDefinition layer) => Create(layer.GeneratorKind, layer.Id);
+
     public static ArtworkGraphDefinition Create(FractalGeneratorKind generatorKind)
+        => Create(generatorKind, null);
+
+    private static ArtworkGraphDefinition Create(FractalGeneratorKind generatorKind, string? prefix)
     {
         var (generator, colorizer) = generatorKind switch
         {
@@ -148,21 +169,25 @@ public static class ArtworkGraphFactory
             ? "field"
             : "path";
 
+        // 保留旧公开工厂的 generator/color 等节点 ID，供 v6 图验证与迁移使用；
+        // v7 每层图则加稳定层 ID 前缀，避免多个生成器共享一个 Document 缓存时发生键冲突。
+        string NodeId(string suffix) => prefix is null ? suffix : $"{prefix}-{suffix}";
+
         return new ArtworkGraphDefinition(
             ArtworkGraphDefinition.CurrentVersion,
             [
-                new("generator", generator, 1),
-                new("color", colorizer, 1),
-                new("effects", ArtworkGraphOperation.EffectChain, 1),
-                new("composition", ArtworkGraphOperation.SingleLayerComposition, 1),
-                new("output", ArtworkGraphOperation.Output, 1)
+                new(NodeId("generator"), generator, 1),
+                new(NodeId("color"), colorizer, 1),
+                new(NodeId("effects"), ArtworkGraphOperation.EffectChain, 1),
+                new(NodeId("composition"), ArtworkGraphOperation.SingleLayerComposition, 1),
+                new(NodeId("output"), ArtworkGraphOperation.Output, 1)
             ],
             [
-                new("generator", sourcePort, "color", "source"),
-                new("color", "image", "effects", "image"),
-                new("effects", "image", "composition", "image"),
-                new("composition", "image", "output", "image")
+                new(NodeId("generator"), sourcePort, NodeId("color"), "source"),
+                new(NodeId("color"), "image", NodeId("effects"), "image"),
+                new(NodeId("effects"), "image", NodeId("composition"), "image"),
+                new(NodeId("composition"), "image", NodeId("output"), "image")
             ],
-            "output");
+            NodeId("output"));
     }
 }

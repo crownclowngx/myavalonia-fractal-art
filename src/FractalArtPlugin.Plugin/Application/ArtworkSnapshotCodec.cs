@@ -26,33 +26,15 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
     public DocumentContent Encode(ArtworkDefinition artwork)
     {
         validator.Validate(artwork);
-        var dto = new SnapshotDto(
+        var dto = new SnapshotV7Dto(
             artwork.FormatVersion,
-            artwork.Seed,
             new CanvasDto(artwork.Canvas.Width, artwork.Canvas.Height, artwork.Canvas.Background.ToHex()),
-            (int)artwork.GeneratorKind,
-            new JuliaDto(
-                artwork.Julia.CenterX,
-                artwork.Julia.CenterY,
-                artwork.Julia.Scale,
-                artwork.Julia.ConstantReal,
-                artwork.Julia.ConstantImaginary,
-                artwork.Julia.MaxIterations,
-                artwork.Julia.ForceHighPrecision,
-                artwork.Julia.PrecisionDigits),
-            EncodeMandelbrot(artwork.Mandelbrot),
-            EncodeRecursiveTree(artwork.RecursiveTree),
-            EncodeLSystem(artwork.LSystem),
-            new GradientDto(
-                artwork.Gradient.Start.ToHex(),
-                artwork.Gradient.End.ToHex(),
-                artwork.Gradient.Interior.ToHex()),
             new PresentationDto(
                 artwork.Presentation.SelectedSection,
-                artwork.Presentation.HighQualityPreview),
-            EncodeExploration(artwork.Exploration),
-            EncodeGraph(artwork.Graph),
-            new EffectChainDto(artwork.Effects.Version, []));
+                artwork.Presentation.HighQualityPreview,
+                artwork.Presentation.SelectedLayerId),
+            artwork.Layers.Select(EncodeLayer).ToArray(),
+            EncodeEffects(artwork.MasterEffects));
         return new DocumentContent(ContentSchemaVersion, JsonSerializer.SerializeToElement(dto, JsonOptions));
     }
 
@@ -78,7 +60,8 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
             3 => DecodeVersion3(content.Payload),
             4 => DecodeVersion4(content.Payload),
             5 => DecodeVersion5(content.Payload),
-            ArtworkDefinition.CurrentFormatVersion => DecodeVersion6(content.Payload),
+            6 => DecodeVersion6(content.Payload),
+            ArtworkDefinition.CurrentFormatVersion => DecodeVersion7(content.Payload),
             _ => throw new NotSupportedException($"不支持作品格式版本 {formatVersion}。")
         };
     }
@@ -86,6 +69,40 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
     private ArtworkDefinition DecodeVersion5(JsonElement payload) => DecodeVersionedSnapshot(payload, 5);
 
     private ArtworkDefinition DecodeVersion6(JsonElement payload) => DecodeVersionedSnapshot(payload, 6);
+
+    private ArtworkDefinition DecodeVersion7(JsonElement payload)
+    {
+        SnapshotV7Dto? dto;
+        try
+        {
+            dto = payload.Deserialize<SnapshotV7Dto>(JsonOptions);
+        }
+        catch (JsonException exception)
+        {
+            throw new InvalidDataException("v7 作品 JSON 结构损坏。", exception);
+        }
+
+        if (dto?.FormatVersion != ArtworkDefinition.CurrentFormatVersion || dto.Canvas?.Width is null ||
+            dto.Canvas.Height is null || !RgbaColor.TryParse(dto.Canvas.Background, out var background) ||
+            dto.Presentation?.HighQualityPreview is null || string.IsNullOrWhiteSpace(dto.Presentation.SelectedSection) ||
+            string.IsNullOrWhiteSpace(dto.Presentation.SelectedLayerId) || dto.Layers is null || dto.MasterEffects is null)
+        {
+            throw new InvalidDataException("v7 作品缺少画布、呈现、图层或 Master Effects 必要字段。");
+        }
+
+        var artwork = new ArtworkDefinition(
+            ArtworkDefinition.CurrentFormatVersion,
+            new CanvasDefinition(dto.Canvas.Width.Value, dto.Canvas.Height.Value, background),
+            new ArtworkPresentationDefinition(
+                dto.Presentation.SelectedSection,
+                dto.Presentation.HighQualityPreview.Value,
+                dto.Presentation.SelectedLayerId),
+            dto.Layers.Select(layer => DecodeLayer(layer ??
+                throw new InvalidDataException("v7 图层集合包含 null。"))),
+            DecodeMasterEffects(dto.MasterEffects));
+        validator.Validate(artwork);
+        return artwork;
+    }
 
     private ArtworkDefinition DecodeVersion4(JsonElement payload) => DecodeVersionedSnapshot(payload, 4);
 
@@ -140,6 +157,11 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
         }
 
         var generatorKind = isVersion3 ? FractalGeneratorKind.Julia : (FractalGeneratorKind)dto.GeneratorKind!.Value;
+        if (!Enum.IsDefined(generatorKind))
+        {
+            throw new InvalidDataException($"v{sourceVersion} 作品包含未知生成器 {dto.GeneratorKind}。");
+        }
+
         var artwork = new ArtworkDefinition(
             ArtworkDefinition.CurrentFormatVersion,
             dto.Seed.Value,
@@ -165,7 +187,7 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
             isVersion6 ? DecodeGraph(dto.Graph!) : ArtworkGraphFactory.Create(generatorKind),
             isVersion6 ? DecodeEffects(dto.Effects!) : EffectChainDefinition.Empty);
         validator.Validate(artwork);
-        return artwork;
+        return artwork.ClearLegacyGraphOverride();
     }
 
     /// <summary>
@@ -180,7 +202,7 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
             Exploration = ArtworkExplorationDefinition.CreateDefault()
         };
         validator.Validate(migrated);
-        return migrated;
+        return migrated.ClearLegacyGraphOverride();
     }
 
     private ArtworkDefinition DecodeVersion2Fields(JsonElement payload)
@@ -281,7 +303,7 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
             ArtworkGraphFactory.Create(FractalGeneratorKind.Julia),
             EffectChainDefinition.Empty);
         validator.Validate(migrated);
-        return migrated;
+        return migrated.ClearLegacyGraphOverride();
     }
 
     private static string FormatDouble(double value) => value.ToString("R", CultureInfo.InvariantCulture);
@@ -338,7 +360,10 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
         double? StrokeWidth,
         double? StrokeWidthDecay);
     private sealed record GradientDto(string? Start, string? End, string? Interior);
-    private sealed record PresentationDto(string? SelectedSection, bool? HighQualityPreview);
+    private sealed record PresentationDto(
+        string? SelectedSection,
+        bool? HighQualityPreview,
+        string? SelectedLayerId = null);
     private sealed record ExplorationDto(
         double? MutationStrength,
         int? Locks,
@@ -368,7 +393,58 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
         string? TargetNodeId,
         string? TargetPort);
     private sealed record EffectChainDto(int? Version, EffectDto?[]? Effects);
-    private sealed record EffectDto(string? TypeId, int? Version, bool? IsEnabled);
+    private sealed record EffectDto(
+        string? TypeId,
+        int? Version,
+        bool? IsEnabled,
+        double? Brightness = null,
+        double? Contrast = null,
+        double? Saturation = null,
+        double? Threshold = null,
+        double? Sigma = null,
+        double? Strength = null,
+        JsonElement? Payload = null);
+
+    private sealed record SnapshotV7Dto(
+        int? FormatVersion,
+        CanvasDto? Canvas,
+        PresentationDto? Presentation,
+        LayerDto?[]? Layers,
+        EffectChainDto? MasterEffects);
+
+    private sealed record LayerDto(
+        string? TypeId,
+        int? Version,
+        string? Id,
+        string? Name,
+        bool? IsVisible,
+        double? Opacity,
+        int? BlendMode,
+        TransformDto? Transform,
+        MaskDto? Mask,
+        FractalDto? Fractal,
+        LayerDto?[]? Children,
+        JsonElement? Payload);
+
+    private sealed record TransformDto(
+        double? PositionXPercent,
+        double? PositionYPercent,
+        double? ScalePercent,
+        double? RotationDegrees,
+        double? AnchorXPercent,
+        double? AnchorYPercent);
+
+    private sealed record MaskDto(string? SourceLayerId, double? Threshold, double? Softness, bool? IsInverted);
+
+    private sealed record FractalDto(
+        long? Seed,
+        int? GeneratorKind,
+        JuliaDto? Julia,
+        MandelbrotDto? Mandelbrot,
+        RecursiveTreeDto? RecursiveTree,
+        LSystemDto? LSystem,
+        GradientDto? Gradient,
+        ExplorationDto? Exploration);
 
     private sealed record LegacySnapshotDto(
         int? FormatVersion,
@@ -385,6 +461,224 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
         double? ConstantReal,
         double? ConstantImaginary,
         int? MaxIterations);
+
+    private static LayerDto EncodeLayer(ArtworkLayerDefinition layer)
+    {
+        var transform = new TransformDto(
+            layer.Transform.PositionXPercent,
+            layer.Transform.PositionYPercent,
+            layer.Transform.ScalePercent,
+            layer.Transform.RotationDegrees,
+            layer.Transform.AnchorXPercent,
+            layer.Transform.AnchorYPercent);
+        var mask = layer.Mask is null
+            ? null
+            : new MaskDto(layer.Mask.SourceLayerId, layer.Mask.Threshold, layer.Mask.Softness, layer.Mask.IsInverted);
+        return layer switch
+        {
+            FractalLayerDefinition fractal => new LayerDto(
+                "fractal", 1, fractal.Id, fractal.Name, fractal.IsVisible, fractal.Opacity,
+                (int)fractal.BlendMode, transform, mask,
+                new FractalDto(
+                    fractal.Seed,
+                    (int)fractal.GeneratorKind,
+                    new JuliaDto(fractal.Julia.CenterX, fractal.Julia.CenterY, fractal.Julia.Scale,
+                        fractal.Julia.ConstantReal, fractal.Julia.ConstantImaginary, fractal.Julia.MaxIterations,
+                        fractal.Julia.ForceHighPrecision, fractal.Julia.PrecisionDigits),
+                    EncodeMandelbrot(fractal.Mandelbrot),
+                    EncodeRecursiveTree(fractal.RecursiveTree),
+                    EncodeLSystem(fractal.LSystem),
+                    new GradientDto(fractal.Gradient.Start.ToHex(), fractal.Gradient.End.ToHex(), fractal.Gradient.Interior.ToHex()),
+                    EncodeExploration(fractal.Exploration)),
+                null,
+                null),
+            LayerGroupDefinition group => new LayerDto(
+                "group", 1, group.Id, group.Name, group.IsVisible, group.Opacity,
+                (int)group.BlendMode, transform, mask, null,
+                group.Children.Select(child => EncodeLayer(child)).ToArray(), null),
+            UnavailableLayerDefinition unavailable => new LayerDto(
+                unavailable.TypeId, unavailable.Version, unavailable.Id, unavailable.Name,
+                unavailable.IsVisible, unavailable.Opacity, (int)unavailable.BlendMode,
+                transform, mask, null, null, ParseOpaque(unavailable.OpaquePayload)),
+            _ => throw new NotSupportedException($"不能编码图层类型 {layer.GetType().Name}。")
+        };
+    }
+
+    private static ArtworkLayerDefinition DecodeLayer(LayerDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.TypeId) || dto.Version is null || string.IsNullOrWhiteSpace(dto.Id) ||
+            string.IsNullOrWhiteSpace(dto.Name) || dto.IsVisible is null || dto.Opacity is null ||
+            dto.BlendMode is null || dto.Transform is null)
+        {
+            throw new InvalidDataException("v7 图层缺少类型、版本、身份、名称或合成字段。");
+        }
+
+        var transform = DecodeTransform(dto.Transform);
+        var mask = DecodeMask(dto.Mask);
+        if (dto.TypeId == "fractal" && dto.Version == 1)
+        {
+            var fractal = dto.Fractal;
+            if (fractal?.Seed is null || fractal.GeneratorKind is null || fractal.Julia is null ||
+                fractal.Mandelbrot is null || fractal.RecursiveTree is null || fractal.LSystem is null ||
+                fractal.Gradient is null || fractal.Exploration is null ||
+                string.IsNullOrWhiteSpace(fractal.Julia.CenterX) || string.IsNullOrWhiteSpace(fractal.Julia.CenterY) ||
+                string.IsNullOrWhiteSpace(fractal.Julia.Scale) || string.IsNullOrWhiteSpace(fractal.Julia.ConstantReal) ||
+                string.IsNullOrWhiteSpace(fractal.Julia.ConstantImaginary) || fractal.Julia.MaxIterations is null ||
+                fractal.Julia.ForceHighPrecision is null || fractal.Julia.PrecisionDigits is null ||
+                !HasAllFields(fractal.Mandelbrot) || !HasAllFields(fractal.RecursiveTree) ||
+                !HasAllFields(fractal.LSystem) ||
+                !RgbaColor.TryParse(fractal.Gradient.Start, out var start) ||
+                !RgbaColor.TryParse(fractal.Gradient.End, out var end) ||
+                !RgbaColor.TryParse(fractal.Gradient.Interior, out var interior))
+            {
+                throw new InvalidDataException($"分形图层 {dto.Name} 包含缺失或非法的生成器字段。");
+            }
+
+            return new FractalLayerDefinition(
+                dto.Id,
+                dto.Name,
+                dto.IsVisible.Value,
+                dto.Opacity.Value,
+                (LayerBlendMode)dto.BlendMode.Value,
+                transform,
+                mask,
+                fractal.Seed.Value,
+                (FractalGeneratorKind)fractal.GeneratorKind.Value,
+                new JuliaDefinition(
+                    fractal.Julia.CenterX,
+                    fractal.Julia.CenterY,
+                    fractal.Julia.Scale,
+                    fractal.Julia.ConstantReal,
+                    fractal.Julia.ConstantImaginary,
+                    fractal.Julia.MaxIterations.Value,
+                    fractal.Julia.ForceHighPrecision.Value,
+                    fractal.Julia.PrecisionDigits.Value),
+                DecodeMandelbrot(fractal.Mandelbrot),
+                DecodeRecursiveTree(fractal.RecursiveTree),
+                DecodeLSystem(fractal.LSystem),
+                new GradientDefinition(start, end, interior),
+                DecodeExploration(fractal.Exploration, ArtworkDefinition.CurrentFormatVersion));
+        }
+
+        if (dto.TypeId == "group" && dto.Version == 1)
+        {
+            if (dto.Children is null)
+            {
+                throw new InvalidDataException($"分组 {dto.Name} 缺少子图层集合。");
+            }
+
+            var children = dto.Children.Select(child => DecodeLayer(child ??
+                throw new InvalidDataException($"分组 {dto.Name} 包含 null 子项。"))).ToArray();
+            if (children.Any(child => child is LayerGroupDefinition))
+            {
+                throw new InvalidDataException($"分组 {dto.Name} 不能嵌套分组。");
+            }
+
+            return new LayerGroupDefinition(
+                dto.Id, dto.Name, dto.IsVisible.Value, dto.Opacity.Value,
+                (LayerBlendMode)dto.BlendMode.Value, transform, mask,
+                children);
+        }
+
+        if (dto.Payload is null)
+        {
+            throw new InvalidDataException($"未知图层 {dto.TypeId} v{dto.Version} 缺少需保留的 payload。");
+        }
+
+        return new UnavailableLayerDefinition(
+            dto.Id, dto.Name, dto.IsVisible.Value, dto.Opacity.Value,
+            (LayerBlendMode)dto.BlendMode.Value, transform, mask,
+            dto.TypeId, dto.Version.Value, dto.Payload.Value.GetRawText());
+    }
+
+    private static LayerTransformDefinition DecodeTransform(TransformDto dto)
+    {
+        if (dto.PositionXPercent is null || dto.PositionYPercent is null || dto.ScalePercent is null ||
+            dto.RotationDegrees is null || dto.AnchorXPercent is null || dto.AnchorYPercent is null)
+        {
+            throw new InvalidDataException("图层变换包含缺失字段。");
+        }
+
+        return new LayerTransformDefinition(
+            dto.PositionXPercent.Value, dto.PositionYPercent.Value, dto.ScalePercent.Value,
+            dto.RotationDegrees.Value, dto.AnchorXPercent.Value, dto.AnchorYPercent.Value);
+    }
+
+    private static ScalarMaskDefinition? DecodeMask(MaskDto? dto)
+    {
+        if (dto is null)
+        {
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(dto.SourceLayerId) || dto.Threshold is null ||
+            dto.Softness is null || dto.IsInverted is null)
+        {
+            throw new InvalidDataException("图层遮罩包含缺失字段。");
+        }
+
+        return new ScalarMaskDefinition(
+            dto.SourceLayerId, dto.Threshold.Value, dto.Softness.Value, dto.IsInverted.Value);
+    }
+
+    private static EffectChainDto EncodeEffects(EffectChainDefinition effects) => new(
+        effects.Version,
+        effects.Effects.Select(effect => effect switch
+        {
+            ToneEffectDefinition tone => new EffectDto(
+                tone.TypeId, tone.Version, tone.IsEnabled,
+                Brightness: tone.Brightness, Contrast: tone.Contrast, Saturation: tone.Saturation),
+            BloomEffectDefinition bloom => new EffectDto(
+                bloom.TypeId, bloom.Version, bloom.IsEnabled,
+                Threshold: bloom.Threshold, Sigma: bloom.Sigma, Strength: bloom.Strength),
+            UnavailableEffectDefinition unavailable => new EffectDto(
+                unavailable.TypeId, unavailable.Version, unavailable.IsEnabled,
+                Payload: ParseOpaque(unavailable.OpaquePayload)),
+            _ => throw new NotSupportedException($"不能编码效果类型 {effect.GetType().Name}。")
+        }).ToArray());
+
+    private static EffectChainDefinition DecodeMasterEffects(EffectChainDto dto)
+    {
+        if (dto.Version is null || dto.Effects is null)
+        {
+            throw new InvalidDataException("Master Effects 缺少版本或效果集合。");
+        }
+
+        var effects = dto.Effects.Select(item =>
+        {
+            if (item?.TypeId is null || item.Version is null || item.IsEnabled is null)
+            {
+                throw new InvalidDataException("Master Effect 包含缺失字段。");
+            }
+
+            return item switch
+            {
+                { TypeId: "tone", Version: 1, Brightness: not null, Contrast: not null, Saturation: not null } =>
+                    (ArtworkEffectDefinition)new ToneEffectDefinition(
+                        item.IsEnabled.Value, item.Brightness.Value, item.Contrast.Value, item.Saturation.Value),
+                { TypeId: "bloom", Version: 1, Threshold: not null, Sigma: not null, Strength: not null } =>
+                    new BloomEffectDefinition(
+                        item.IsEnabled.Value, item.Threshold.Value, item.Sigma.Value, item.Strength.Value),
+                { Payload: not null } => new UnavailableEffectDefinition(
+                    item.TypeId, item.Version.Value, item.IsEnabled.Value, item.Payload.Value.GetRawText()),
+                _ => throw new InvalidDataException($"未知效果 {item.TypeId} v{item.Version} 缺少需保留的 payload。")
+            };
+        }).ToArray();
+        return new EffectChainDefinition(dto.Version.Value, effects);
+    }
+
+    private static JsonElement ParseOpaque(string payload)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(payload);
+            return document.RootElement.Clone();
+        }
+        catch (JsonException exception)
+        {
+            throw new InvalidDataException("不可用能力的原始 payload 不是合法 JSON。", exception);
+        }
+    }
 
     private static ExplorationDto EncodeExploration(ArtworkExplorationDefinition exploration) => new(
         exploration.MutationStrength,
