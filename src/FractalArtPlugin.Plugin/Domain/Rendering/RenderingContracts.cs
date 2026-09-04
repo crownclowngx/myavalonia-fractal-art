@@ -17,17 +17,7 @@ public interface IMandelbrotFieldGenerator
 
 public interface IGradientMapper
 {
-    RgbaImage Map(ScalarField field, GradientDefinition gradient, CancellationToken cancellationToken);
-}
-
-/// <summary>
-/// 一种作品生成器的完整渲染策略。应用管线只按稳定类型选择策略，不了解标量场或路径的内部步骤，
-/// 因而增加第三类数据形态时无需继续扩大 Document 或导出器的职责。
-/// </summary>
-public interface IArtworkGeneratorRenderer
-{
-    FractalGeneratorKind Kind { get; }
-    Task<RgbaImage> RenderAsync(ArtworkDefinition artwork, RenderContext context, CancellationToken cancellationToken);
+    ImageSurface Map(ScalarField field, GradientDefinition gradient, CancellationToken cancellationToken);
 }
 
 public interface IRecursiveTreePathGenerator
@@ -58,7 +48,7 @@ public sealed record PathStrokeDefinition(
 
 public interface IPathStrokeRenderer
 {
-    RgbaImage Render(
+    ImageSurface Render(
         PathGeometry geometry,
         PathStrokeDefinition stroke,
         GradientDefinition gradient,

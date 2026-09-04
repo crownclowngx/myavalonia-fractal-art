@@ -676,7 +676,7 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
     {
         if (Enum.TryParse<FractalGeneratorKind>(kind, out var parsed) && parsed != _artwork.GeneratorKind)
         {
-            Mutate(_artwork with { GeneratorKind = parsed });
+            Mutate(_artwork.WithGeneratorKind(parsed));
         }
     }
 
@@ -1121,7 +1121,7 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
             }
 
             var result = await _renderPipeline.RenderAsync(snapshot, context, current.Token).ConfigureAwait(true);
-            if (!TryCommitPreview(result, context, generation, current.Token))
+            if (!TryCommitPreview(result.Image, context, generation, current.Token))
             {
                 return;
             }
@@ -1130,7 +1130,7 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
             {
                 await Task.Delay(160, current.Token).ConfigureAwait(true);
                 var detailed = await _renderPipeline.RenderAsync(snapshot, requestedContext, current.Token).ConfigureAwait(true);
-                TryCommitPreview(detailed, requestedContext, generation, current.Token);
+                TryCommitPreview(detailed.Image, requestedContext, generation, current.Token);
             }
         }
         catch (OperationCanceledException) when (current.IsCancellationRequested)
@@ -1162,7 +1162,7 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
     /// 真实帧提交的唯一入口。generation 检查位于 Bitmap 创建前后；即使底层忽略取消，旧帧也无法覆盖新状态。
     /// 成功提交后立即清除暂态变换，确保屏幕重新与真实像素坐标对齐。
     /// </summary>
-    private bool TryCommitPreview(RgbaImage result, RenderContext context, long generation, CancellationToken token)
+    private bool TryCommitPreview(ImageSurface result, RenderContext context, long generation, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
         if (generation != Volatile.Read(ref _previewGeneration) || _lifetime.IsClosing || _disposed)

@@ -11,10 +11,14 @@ public interface IArtworkValidator
 internal sealed class ArtworkValidator : IArtworkValidator
 {
     private readonly ILSystemValidator _lSystemValidator;
+    private readonly IArtworkGraphValidator _graphValidator;
 
-    public ArtworkValidator(ILSystemValidator? lSystemValidator = null)
+    public ArtworkValidator(
+        ILSystemValidator? lSystemValidator = null,
+        IArtworkGraphValidator? graphValidator = null)
     {
         _lSystemValidator = lSystemValidator ?? new LSystemValidator();
+        _graphValidator = graphValidator ?? new ArtworkGraphValidator();
     }
 
     public void Validate(ArtworkDefinition artwork)
@@ -40,6 +44,7 @@ internal sealed class ArtworkValidator : IArtworkValidator
         ValidateMandelbrot(artwork.Mandelbrot);
         ValidateRecursiveTree(artwork.RecursiveTree);
         _lSystemValidator.Validate(artwork.LSystem);
+        _graphValidator.ValidateAndSort(artwork.Graph, artwork.GeneratorKind, artwork.Effects);
 
         if (string.IsNullOrWhiteSpace(artwork.Presentation.SelectedSection) ||
             artwork.Presentation.SelectedSection.Length > 32)

@@ -33,4 +33,5 @@ public sealed class PathGeometry
 
     public IReadOnlyList<PathSegment> Segments { get; }
     public int MaximumLevel { get; }
+    internal long EstimatedByteSize => checked((long)Segments.Count * 40 + sizeof(int));
 }

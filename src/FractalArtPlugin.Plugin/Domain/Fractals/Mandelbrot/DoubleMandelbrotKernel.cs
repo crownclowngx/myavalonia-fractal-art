@@ -57,7 +57,7 @@ internal sealed class DoubleMandelbrotKernel : IMandelbrotKernel
             }
         }
 
-        return new ScalarField(context.Width, context.Height, values, escaped,
+        return ScalarField.FromOwned(context.Width, context.Height, values, escaped,
             new RenderDiagnostics("mandelbrot-double", context.ConfiguredPrecisionDigits,
                 context.EffectivePrecisionDigits, 1, 0, 0));
     }

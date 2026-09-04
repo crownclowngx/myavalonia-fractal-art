@@ -146,7 +146,7 @@ Console.WriteLine(json);
 static string Fingerprint(ScalarField field)
 {
     var bytes = new byte[field.Values.Length * sizeof(float) + field.Escaped.Length];
-    Buffer.BlockCopy(field.Values, 0, bytes, 0, field.Values.Length * sizeof(float));
+    Buffer.BlockCopy(field.Values.ToArray(), 0, bytes, 0, field.Values.Length * sizeof(float));
     for (var index = 0; index < field.Escaped.Length; index++)
     {
         bytes[field.Values.Length * sizeof(float) + index] = field.Escaped[index] ? (byte)1 : (byte)0;

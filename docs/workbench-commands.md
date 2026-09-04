@@ -4,7 +4,7 @@ Plugin SDK `3.3.0` 允许插件把少量高价值用户意图声明为 Workbench
 Command Palette 投影。Command 不是 Avalonia `ICommand` 的替代品；只对当前 Document 有意义的按钮、表单、
 拖放和参数修改应继续使用插件内部命令。
 
-## 当前产品决策（G0001–G0005）
+## 当前产品决策（G0001–G0006）
 
 模板阶段的 `ApplyWorkbenchMessage` 已在 G0001 移除，且不复用原身份包装其他语义。当前 Module 不登记
 Workbench Command、菜单贡献或快捷键：

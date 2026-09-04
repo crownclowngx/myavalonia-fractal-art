@@ -465,9 +465,8 @@ internal sealed class ArtworkPresetCatalog : IArtworkPresetCatalog
     {
         var preset = ArtworkPresets.SingleOrDefault(item => item.Id == id)
             ?? throw new ArgumentException($"未知作品预设：{id}。", nameof(id));
-        return artwork with
+        return artwork.WithGeneratorKind(preset.GeneratorKind) with
         {
-            GeneratorKind = preset.GeneratorKind,
             Julia = preset.Julia,
             Mandelbrot = preset.Mandelbrot ?? artwork.Mandelbrot,
             RecursiveTree = preset.RecursiveTree,

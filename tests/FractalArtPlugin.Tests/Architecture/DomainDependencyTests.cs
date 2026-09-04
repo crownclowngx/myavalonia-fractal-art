@@ -10,6 +10,9 @@ public sealed class DomainDependencyTests
         var types = new[]
         {
             typeof(ArtworkDefinition),
+            typeof(ArtworkGraphDefinition),
+            typeof(ImageSurface),
+            typeof(Mask),
             typeof(HighPrecisionViewport),
             typeof(RenderContext),
             typeof(ArbitraryDecimal),

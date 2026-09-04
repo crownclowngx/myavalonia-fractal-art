@@ -112,6 +112,7 @@ public sealed class VariationTests
         var source = ArtworkDefinition.CreateDefault() with
         {
             GeneratorKind = FractalGeneratorKind.RecursiveTree,
+            Graph = ArtworkGraphFactory.Create(FractalGeneratorKind.RecursiveTree),
             Exploration = ArtworkDefinition.CreateDefault().Exploration with { MutationStrength = 1 }
         };
 
@@ -140,6 +141,7 @@ public sealed class VariationTests
         var source = ArtworkDefinition.CreateDefault() with
         {
             GeneratorKind = FractalGeneratorKind.RecursiveTree,
+            Graph = ArtworkGraphFactory.Create(FractalGeneratorKind.RecursiveTree),
             Exploration = ArtworkDefinition.CreateDefault().Exploration with
             {
                 Mode = VariationMode.TextureOnly,
@@ -161,6 +163,7 @@ public sealed class VariationTests
         var source = ArtworkDefinition.CreateDefault() with
         {
             GeneratorKind = FractalGeneratorKind.Mandelbrot,
+            Graph = ArtworkGraphFactory.Create(FractalGeneratorKind.Mandelbrot),
             Exploration = ArtworkDefinition.CreateDefault().Exploration with { MutationStrength = 1 }
         };
 
@@ -209,7 +212,8 @@ public sealed class VariationTests
         var first = await explorer.ExploreAsync(source, 9, CancellationToken.None);
         var second = await explorer.ExploreAsync(source, 9, CancellationToken.None);
 
-        Assert.Equal(9, pipeline.CallCount);
+        Assert.Equal(18, pipeline.CallCount);
+        Assert.Equal(9, pipeline.ExpensiveCallCount);
         Assert.InRange(pipeline.MaximumConcurrency, 1, 3);
         Assert.DoesNotContain(first.RenderedCandidates, item => item.FromCache);
         Assert.All(second.RenderedCandidates, item => Assert.True(item.FromCache));
@@ -231,16 +235,32 @@ public sealed class VariationTests
         private int _active;
         private int _maximumConcurrency;
         private int _callCount;
+        private int _expensiveCallCount;
+        private readonly object _cacheSync = new();
+        private readonly HashSet<(VariationRecipeDefinition Recipe, int Width, int Height)> _cache = [];
 
         public int CallCount => _callCount;
+        public int ExpensiveCallCount => _expensiveCallCount;
         public int MaximumConcurrency => _maximumConcurrency;
 
-        public async Task<RgbaImage> RenderAsync(
+        public async Task<ArtworkRenderResult> RenderAsync(
             ArtworkDefinition artwork,
             RenderContext context,
             CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref _callCount);
+            var key = (artwork.ToVariationRecipe(), context.Width, context.Height);
+            lock (_cacheSync)
+            {
+                if (_cache.Contains(key))
+                {
+                    return new ArtworkRenderResult(
+                        new ImageSurface(context.Width, context.Height, new byte[context.Width * context.Height * 4]),
+                        new ArtworkRenderExecutionSummary(["cached"], [], 1));
+                }
+            }
+
+            Interlocked.Increment(ref _expensiveCallCount);
             var active = Interlocked.Increment(ref _active);
             while (true)
             {
@@ -254,7 +274,13 @@ public sealed class VariationTests
             try
             {
                 await Task.Delay(delayMilliseconds, cancellationToken);
-                return new RgbaImage(context.Width, context.Height, new byte[context.Width * context.Height * 4]);
+                var image = new ImageSurface(context.Width, context.Height, new byte[context.Width * context.Height * 4]);
+                lock (_cacheSync)
+                {
+                    _cache.Add(key);
+                }
+
+                return new ArtworkRenderResult(image, new ArtworkRenderExecutionSummary([], ["rendered"], 1));
             }
             finally
             {

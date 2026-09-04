@@ -359,11 +359,11 @@ public sealed class DocumentTests
     {
         public int CallCount { get; private set; }
 
-        public Task<RgbaImage> RenderAsync(ArtworkDefinition artwork, RenderContext context, CancellationToken cancellationToken)
+        public Task<ArtworkRenderResult> RenderAsync(ArtworkDefinition artwork, RenderContext context, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             CallCount++;
-            return Task.FromResult(ControlledPipeline.CreateImage(artwork.Julia.ConstantReal));
+            return Task.FromResult(CreateResult(ControlledPipeline.CreateImage(artwork.Julia.ConstantReal)));
         }
     }
 
@@ -371,7 +371,7 @@ public sealed class DocumentTests
     {
         private int _callCount;
 
-        public async Task<RgbaImage> RenderAsync(ArtworkDefinition artwork, RenderContext context, CancellationToken cancellationToken)
+        public async Task<ArtworkRenderResult> RenderAsync(ArtworkDefinition artwork, RenderContext context, CancellationToken cancellationToken)
         {
             var call = Interlocked.Increment(ref _callCount);
             if (call > 1)
@@ -380,14 +380,14 @@ public sealed class DocumentTests
                 await Task.Delay(ArbitraryDecimal.Parse(artwork.Julia.ConstantReal).ToDouble() == -0.5 ? 120 : 10);
             }
 
-            return CreateImage(artwork.Julia.ConstantReal);
+            return CreateResult(CreateImage(artwork.Julia.ConstantReal));
         }
 
-        public static RgbaImage CreateImage(string constantRealText)
+        public static ImageSurface CreateImage(string constantRealText)
         {
             var constantReal = ArbitraryDecimal.Parse(constantRealText).ToDouble();
             var value = (byte)Math.Clamp((int)Math.Round((constantReal + 2) * 50), 0, 255);
-            return new RgbaImage(1, 1, [value, 0, 0, 255]);
+            return new ImageSurface(1, 1, [value, 0, 0, 255]);
         }
     }
 
@@ -423,7 +423,7 @@ public sealed class DocumentTests
             }
         }
 
-        public Task<RgbaImage> RenderAsync(
+        public Task<ArtworkRenderResult> RenderAsync(
             ArtworkDefinition artwork,
             RenderContext context,
             CancellationToken cancellationToken)
@@ -439,7 +439,7 @@ public sealed class DocumentTests
                 }
             }
 
-            return Task.FromResult(ControlledPipeline.CreateImage(artwork.Julia.ConstantReal));
+            return Task.FromResult(CreateResult(ControlledPipeline.CreateImage(artwork.Julia.ConstantReal)));
         }
     }
 
@@ -449,14 +449,14 @@ public sealed class DocumentTests
         private readonly TaskCompletionSource _variationStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public Task VariationStarted => _variationStarted.Task;
 
-        public async Task<RgbaImage> RenderAsync(
+        public async Task<ArtworkRenderResult> RenderAsync(
             ArtworkDefinition artwork,
             RenderContext context,
             CancellationToken cancellationToken)
         {
             if (Interlocked.Increment(ref _calls) == 1)
             {
-                return ControlledPipeline.CreateImage(artwork.Julia.ConstantReal);
+                return CreateResult(ControlledPipeline.CreateImage(artwork.Julia.ConstantReal));
             }
 
             _variationStarted.TrySetResult();
@@ -465,9 +465,13 @@ public sealed class DocumentTests
         }
     }
 
+    private static ArtworkRenderResult CreateResult(ImageSurface image) => new(
+        image,
+        new ArtworkRenderExecutionSummary([], ["test"], 1));
+
     private sealed class NullPreviewFactory : IPreviewImageFactory
     {
-        public Bitmap? Create(RgbaImage image, CancellationToken cancellationToken)
+        public Bitmap? Create(ImageSurface image, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             return null;

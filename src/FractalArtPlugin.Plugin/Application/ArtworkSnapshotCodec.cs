@@ -50,7 +50,9 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
             new PresentationDto(
                 artwork.Presentation.SelectedSection,
                 artwork.Presentation.HighQualityPreview),
-            EncodeExploration(artwork.Exploration));
+            EncodeExploration(artwork.Exploration),
+            EncodeGraph(artwork.Graph),
+            new EffectChainDto(artwork.Effects.Version, []));
         return new DocumentContent(ContentSchemaVersion, JsonSerializer.SerializeToElement(dto, JsonOptions));
     }
 
@@ -75,12 +77,15 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
             2 => DecodeVersion2(content.Payload),
             3 => DecodeVersion3(content.Payload),
             4 => DecodeVersion4(content.Payload),
-            ArtworkDefinition.CurrentFormatVersion => DecodeVersion5(content.Payload),
+            5 => DecodeVersion5(content.Payload),
+            ArtworkDefinition.CurrentFormatVersion => DecodeVersion6(content.Payload),
             _ => throw new NotSupportedException($"不支持作品格式版本 {formatVersion}。")
         };
     }
 
     private ArtworkDefinition DecodeVersion5(JsonElement payload) => DecodeVersionedSnapshot(payload, 5);
+
+    private ArtworkDefinition DecodeVersion6(JsonElement payload) => DecodeVersionedSnapshot(payload, 6);
 
     private ArtworkDefinition DecodeVersion4(JsonElement payload) => DecodeVersionedSnapshot(payload, 4);
 
@@ -111,7 +116,8 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
         var canvas = dto.Canvas;
         var julia = dto.Julia;
         var isVersion3 = sourceVersion == 3;
-        var isVersion5 = sourceVersion == 5;
+        var supportsVersion5Fields = sourceVersion >= 5;
+        var isVersion6 = sourceVersion == 6;
         var recursiveTree = isVersion3 ? null : dto.RecursiveTree;
         var gradient = dto.Gradient;
         var presentation = dto.Presentation;
@@ -120,8 +126,9 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
             string.IsNullOrWhiteSpace(julia.ConstantReal) || string.IsNullOrWhiteSpace(julia.ConstantImaginary) ||
             julia.MaxIterations is null || julia.ForceHighPrecision is null || julia.PrecisionDigits is null ||
             (!isVersion3 && (dto.GeneratorKind is null || recursiveTree is null || !HasAllFields(recursiveTree))) ||
-            (isVersion5 && (dto.Mandelbrot is null || !HasAllFields(dto.Mandelbrot) ||
+            (supportsVersion5Fields && (dto.Mandelbrot is null || !HasAllFields(dto.Mandelbrot) ||
                 dto.LSystem is null || !HasAllFields(dto.LSystem))) ||
+            (isVersion6 && (dto.Graph is null || dto.Effects is null)) ||
             presentation.HighQualityPreview is null ||
             !RgbaColor.TryParse(canvas.Background, out var background) ||
             !RgbaColor.TryParse(gradient.Start, out var start) ||
@@ -132,11 +139,12 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
             throw new InvalidDataException("作品包含缺失或非法的画布、Julia、渐变或呈现字段。");
         }
 
+        var generatorKind = isVersion3 ? FractalGeneratorKind.Julia : (FractalGeneratorKind)dto.GeneratorKind!.Value;
         var artwork = new ArtworkDefinition(
             ArtworkDefinition.CurrentFormatVersion,
             dto.Seed.Value,
             new CanvasDefinition(canvas.Width.Value, canvas.Height.Value, background),
-            isVersion3 ? FractalGeneratorKind.Julia : (FractalGeneratorKind)dto.GeneratorKind!.Value,
+            generatorKind,
             new JuliaDefinition(
                 julia.CenterX,
                 julia.CenterY,
@@ -146,14 +154,16 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
                 julia.MaxIterations.Value,
                 julia.ForceHighPrecision.Value,
                 julia.PrecisionDigits.Value),
-            isVersion5 ? DecodeMandelbrot(dto.Mandelbrot!) : ArtworkDefinition.CreateDefault().Mandelbrot,
+            supportsVersion5Fields ? DecodeMandelbrot(dto.Mandelbrot!) : ArtworkDefinition.CreateDefault().Mandelbrot,
             isVersion3 ? ArtworkDefinition.CreateDefault().RecursiveTree : DecodeRecursiveTree(recursiveTree!),
-            isVersion5 ? DecodeLSystem(dto.LSystem!) : ArtworkDefinition.CreateDefault().LSystem,
+            supportsVersion5Fields ? DecodeLSystem(dto.LSystem!) : ArtworkDefinition.CreateDefault().LSystem,
             new GradientDefinition(start, end, interior),
             new ArtworkPresentationDefinition(
                 presentation.SelectedSection,
                 presentation.HighQualityPreview.Value),
-            DecodeExploration(dto.Exploration, sourceVersion));
+            DecodeExploration(dto.Exploration, sourceVersion),
+            isVersion6 ? DecodeGraph(dto.Graph!) : ArtworkGraphFactory.Create(generatorKind),
+            isVersion6 ? DecodeEffects(dto.Effects!) : EffectChainDefinition.Empty);
         validator.Validate(artwork);
         return artwork;
     }
@@ -212,7 +222,9 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
             ArtworkDefinition.CreateDefault().LSystem,
             new GradientDefinition(start, end, interior),
             new ArtworkPresentationDefinition(dto.Presentation.SelectedSection, dto.Presentation.HighQualityPreview.Value),
-            ArtworkExplorationDefinition.CreateDefault());
+            ArtworkExplorationDefinition.CreateDefault(),
+            ArtworkGraphFactory.Create(FractalGeneratorKind.Julia),
+            EffectChainDefinition.Empty);
     }
 
     /// <summary>
@@ -265,7 +277,9 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
             new ArtworkPresentationDefinition(
                 dto.Presentation.SelectedSection,
                 dto.Presentation.HighQualityPreview.Value),
-            ArtworkExplorationDefinition.CreateDefault());
+            ArtworkExplorationDefinition.CreateDefault(),
+            ArtworkGraphFactory.Create(FractalGeneratorKind.Julia),
+            EffectChainDefinition.Empty);
         validator.Validate(migrated);
         return migrated;
     }
@@ -283,7 +297,9 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
         LSystemDto? LSystem,
         GradientDto? Gradient,
         PresentationDto? Presentation,
-        ExplorationDto? Exploration);
+        ExplorationDto? Exploration,
+        GraphDto? Graph,
+        EffectChainDto? Effects);
 
     private sealed record CanvasDto(int? Width, int? Height, string? Background);
     private sealed record JuliaDto(
@@ -340,6 +356,19 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
         RecursiveTreeDto? RecursiveTree,
         LSystemDto? LSystem,
         GradientDto? Gradient);
+    private sealed record GraphDto(
+        int? Version,
+        GraphNodeDto?[]? Nodes,
+        GraphConnectionDto?[]? Connections,
+        string? OutputNodeId);
+    private sealed record GraphNodeDto(string? Id, int? Operation, int? Version);
+    private sealed record GraphConnectionDto(
+        string? SourceNodeId,
+        string? SourcePort,
+        string? TargetNodeId,
+        string? TargetPort);
+    private sealed record EffectChainDto(int? Version, EffectDto?[]? Effects);
+    private sealed record EffectDto(string? TypeId, int? Version, bool? IsEnabled);
 
     private sealed record LegacySnapshotDto(
         int? FormatVersion,
@@ -421,14 +450,14 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
     private static VariationRecipeDefinition DecodeRecipe(VariationRecipeDto dto, int sourceVersion)
     {
         var isVersion3 = sourceVersion == 3;
-        var isVersion5 = sourceVersion == 5;
+        var supportsVersion5Fields = sourceVersion >= 5;
         if (dto.Seed is null || dto.Julia is null || dto.Gradient is null ||
             string.IsNullOrWhiteSpace(dto.Julia.CenterX) || string.IsNullOrWhiteSpace(dto.Julia.CenterY) ||
             string.IsNullOrWhiteSpace(dto.Julia.Scale) || string.IsNullOrWhiteSpace(dto.Julia.ConstantReal) ||
             string.IsNullOrWhiteSpace(dto.Julia.ConstantImaginary) || dto.Julia.MaxIterations is null ||
             dto.Julia.ForceHighPrecision is null || dto.Julia.PrecisionDigits is null ||
             (!isVersion3 && (dto.GeneratorKind is null || dto.RecursiveTree is null || !HasAllFields(dto.RecursiveTree))) ||
-            (isVersion5 && (dto.Mandelbrot is null || !HasAllFields(dto.Mandelbrot) ||
+            (supportsVersion5Fields && (dto.Mandelbrot is null || !HasAllFields(dto.Mandelbrot) ||
                 dto.LSystem is null || !HasAllFields(dto.LSystem))) ||
             !RgbaColor.TryParse(dto.Gradient.Start, out var start) ||
             !RgbaColor.TryParse(dto.Gradient.End, out var end) ||
@@ -443,9 +472,9 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
             new JuliaDefinition(dto.Julia.CenterX, dto.Julia.CenterY, dto.Julia.Scale,
                 dto.Julia.ConstantReal, dto.Julia.ConstantImaginary, dto.Julia.MaxIterations.Value,
                 dto.Julia.ForceHighPrecision.Value, dto.Julia.PrecisionDigits.Value),
-            isVersion5 ? DecodeMandelbrot(dto.Mandelbrot!) : ArtworkDefinition.CreateDefault().Mandelbrot,
+            supportsVersion5Fields ? DecodeMandelbrot(dto.Mandelbrot!) : ArtworkDefinition.CreateDefault().Mandelbrot,
             isVersion3 ? ArtworkDefinition.CreateDefault().RecursiveTree : DecodeRecursiveTree(dto.RecursiveTree!),
-            isVersion5 ? DecodeLSystem(dto.LSystem!) : ArtworkDefinition.CreateDefault().LSystem,
+            supportsVersion5Fields ? DecodeLSystem(dto.LSystem!) : ArtworkDefinition.CreateDefault().LSystem,
             new GradientDefinition(start, end, interior));
     }
 
@@ -523,4 +552,62 @@ internal sealed class ArtworkSnapshotCodec(IArtworkValidator validator) : IArtwo
         lSystem.LengthDecay!.Value,
         lSystem.StrokeWidth!.Value,
         lSystem.StrokeWidthDecay!.Value);
+
+    private static GraphDto EncodeGraph(ArtworkGraphDefinition graph) => new(
+        graph.Version,
+        graph.Nodes.Select(node => new GraphNodeDto(node.Id, (int)node.Operation, node.Version)).ToArray(),
+        graph.Connections.Select(connection => new GraphConnectionDto(
+            connection.SourceNodeId,
+            connection.SourcePort,
+            connection.TargetNodeId,
+            connection.TargetPort)).ToArray(),
+        graph.OutputNodeId);
+
+    private static ArtworkGraphDefinition DecodeGraph(GraphDto graph)
+    {
+        if (graph.Version is null || graph.Nodes is null || graph.Connections is null ||
+            string.IsNullOrWhiteSpace(graph.OutputNodeId) ||
+            graph.Nodes.Any(node => node is null || string.IsNullOrWhiteSpace(node.Id) ||
+                node.Operation is null || node.Version is null) ||
+            graph.Connections.Any(connection => connection is null ||
+                string.IsNullOrWhiteSpace(connection.SourceNodeId) ||
+                string.IsNullOrWhiteSpace(connection.SourcePort) ||
+                string.IsNullOrWhiteSpace(connection.TargetNodeId) ||
+                string.IsNullOrWhiteSpace(connection.TargetPort)))
+        {
+            throw new InvalidDataException("创作图包含缺失的版本、节点、端口或连接字段。");
+        }
+
+        return new ArtworkGraphDefinition(
+            graph.Version.Value,
+            graph.Nodes.Select(node => new ArtworkGraphNodeDefinition(
+                node!.Id!,
+                (ArtworkGraphOperation)node.Operation!.Value,
+                node.Version!.Value)),
+            graph.Connections.Select(connection => new ArtworkGraphConnectionDefinition(
+                connection!.SourceNodeId!,
+                connection.SourcePort!,
+                connection.TargetNodeId!,
+                connection.TargetPort!)),
+            graph.OutputNodeId);
+    }
+
+    private static EffectChainDefinition DecodeEffects(EffectChainDto effects)
+    {
+        if (effects.Version is null || effects.Effects is null)
+        {
+            throw new InvalidDataException("效果链缺少版本或效果集合。");
+        }
+
+        if (effects.Effects.Length > 0)
+        {
+            var first = effects.Effects[0];
+            var typeId = first?.TypeId;
+            throw new NotSupportedException(string.IsNullOrWhiteSpace(typeId)
+                ? "G0006 不支持包含未知效果的作品。"
+                : $"G0006 不支持效果类型 {typeId}。");
+        }
+
+        return new EffectChainDefinition(effects.Version.Value, []);
+    }
 }

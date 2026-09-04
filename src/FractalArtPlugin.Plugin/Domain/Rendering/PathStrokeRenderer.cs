@@ -8,7 +8,7 @@ namespace FractalArtPlugin.Domain.Rendering;
 /// </summary>
 internal sealed class PathStrokeRenderer : IPathStrokeRenderer
 {
-    public RgbaImage Render(
+    public ImageSurface Render(
         PathGeometry geometry,
         PathStrokeDefinition stroke,
         GradientDefinition gradient,
@@ -35,7 +35,7 @@ internal sealed class PathStrokeRenderer : IPathStrokeRenderer
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        return new RgbaImage(
+        return ImageSurface.FromOwned(
             context.Width,
             context.Height,
             pixels,

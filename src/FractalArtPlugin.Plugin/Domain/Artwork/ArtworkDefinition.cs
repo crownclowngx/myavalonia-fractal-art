@@ -213,9 +213,11 @@ public sealed record ArtworkDefinition(
     LSystemDefinition LSystem,
     GradientDefinition Gradient,
     ArtworkPresentationDefinition Presentation,
-    ArtworkExplorationDefinition Exploration)
+    ArtworkExplorationDefinition Exploration,
+    ArtworkGraphDefinition Graph,
+    EffectChainDefinition Effects)
 {
-    public const int CurrentFormatVersion = 5;
+    public const int CurrentFormatVersion = 6;
 
     public static ArtworkDefinition CreateDefault() => new(
         CurrentFormatVersion,
@@ -228,7 +230,9 @@ public sealed record ArtworkDefinition(
         CreateDefaultLSystem(),
         new GradientDefinition(new RgbaColor(20, 31, 74), new RgbaColor(248, 167, 63), new RgbaColor(3, 5, 12)),
         new ArtworkPresentationDefinition("生成", false),
-        ArtworkExplorationDefinition.CreateDefault());
+        ArtworkExplorationDefinition.CreateDefault(),
+        ArtworkGraphFactory.Create(FractalGeneratorKind.Julia),
+        EffectChainDefinition.Empty);
 
     /// <summary>从当前作品提取能够独立重放画面的最小配方。</summary>
     public VariationRecipeDefinition ToVariationRecipe() =>
@@ -241,11 +245,22 @@ public sealed record ArtworkDefinition(
     {
         Seed = recipe.Seed,
         GeneratorKind = recipe.GeneratorKind,
+        Graph = ArtworkGraphFactory.Create(recipe.GeneratorKind),
         Julia = recipe.Julia,
         Mandelbrot = recipe.Mandelbrot,
         RecursiveTree = recipe.RecursiveTree,
         LSystem = recipe.LSystem,
         Gradient = recipe.Gradient
+    };
+
+    /// <summary>
+    /// 生成器类型和规范图是一个不可拆分的领域修改。所有 UI、预设和迁移都通过此方法切换，
+    /// 防止作品声明 Julia、图中却保留路径节点之类的双事实错误。
+    /// </summary>
+    public ArtworkDefinition WithGeneratorKind(FractalGeneratorKind generatorKind) => this with
+    {
+        GeneratorKind = generatorKind,
+        Graph = ArtworkGraphFactory.Create(generatorKind)
     };
 
     public GeneratorFamily GeneratorFamily => GeneratorKind is FractalGeneratorKind.Julia or FractalGeneratorKind.Mandelbrot

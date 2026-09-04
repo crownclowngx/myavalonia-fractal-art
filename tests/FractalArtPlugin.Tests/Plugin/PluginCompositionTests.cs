@@ -54,8 +54,14 @@ public sealed class PluginCompositionTests
 
         var first = firstScope.ServiceProvider.GetRequiredService<FractalArtworkDocument>();
         var second = secondScope.ServiceProvider.GetRequiredService<FractalArtworkDocument>();
+        var firstCache = firstScope.ServiceProvider.GetRequiredService<IArtworkGraphCache>();
+        var secondCache = secondScope.ServiceProvider.GetRequiredService<IArtworkGraphCache>();
+        var firstPipeline = firstScope.ServiceProvider.GetRequiredService<IArtworkRenderPipeline>();
+        var secondPipeline = secondScope.ServiceProvider.GetRequiredService<IArtworkRenderPipeline>();
 
         Assert.NotSame(first, second);
+        Assert.NotSame(firstCache, secondCache);
+        Assert.NotSame(firstPipeline, secondPipeline);
     }
 
     private sealed class CapturingRegistration : IPluginRegistration, IWorkflowActionRegistration, IWorkbenchCommandRegistration

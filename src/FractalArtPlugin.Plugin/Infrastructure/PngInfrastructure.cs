@@ -12,7 +12,7 @@ internal sealed class PngEncoder : IPngEncoder
 {
     private static readonly byte[] Signature = [137, 80, 78, 71, 13, 10, 26, 10];
 
-    public byte[] Encode(RgbaImage image, CancellationToken cancellationToken)
+    public byte[] Encode(ImageSurface image, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(image);
         cancellationToken.ThrowIfCancellationRequested();
@@ -34,7 +34,7 @@ internal sealed class PngEncoder : IPngEncoder
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 compressor.WriteByte(0); // 过滤类型 0：保持实现简单、确定且易于验证。
-                compressor.Write(image.Pixels, y * rowBytes, rowBytes);
+                compressor.Write(image.Pixels.Span.Slice(y * rowBytes, rowBytes));
             }
         }
 
@@ -126,7 +126,7 @@ internal sealed class AtomicFileWriter : IAtomicFileWriter
 
 internal sealed class AvaloniaPreviewImageFactory(IPngEncoder encoder) : IPreviewImageFactory
 {
-    public Bitmap Create(RgbaImage image, CancellationToken cancellationToken)
+    public Bitmap Create(ImageSurface image, CancellationToken cancellationToken)
     {
         var bytes = encoder.Encode(image, cancellationToken);
         using var stream = new MemoryStream(bytes, writable: false);

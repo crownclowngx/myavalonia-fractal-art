@@ -64,7 +64,7 @@ internal sealed class ArbitraryMandelbrotKernel : IMandelbrotKernel
             }
         });
 
-        return new ScalarField(context.Width, context.Height, values, escaped,
+        return ScalarField.FromOwned(context.Width, context.Height, values, escaped,
             new RenderDiagnostics("mandelbrot-arbitrary-fixed", context.ConfiguredPrecisionDigits,
                 context.EffectivePrecisionDigits, context.MaxDegreeOfParallelism, 0, 0));
     }

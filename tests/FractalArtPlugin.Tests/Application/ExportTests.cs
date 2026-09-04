@@ -90,14 +90,16 @@ public sealed class ExportTests
     {
         public RenderContext? Context { get; private set; }
 
-        public Task<RgbaImage> RenderAsync(
+        public Task<ArtworkRenderResult> RenderAsync(
             ArtworkDefinition artwork,
             RenderContext context,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             Context = context;
-            return Task.FromResult(new RgbaImage(1, 1, [10, 20, 30, 255]));
+            return Task.FromResult(new ArtworkRenderResult(
+                new ImageSurface(1, 1, [10, 20, 30, 255]),
+                new ArtworkRenderExecutionSummary([], ["test"], 1)));
         }
     }
 

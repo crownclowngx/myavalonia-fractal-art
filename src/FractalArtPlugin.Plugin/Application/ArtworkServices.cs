@@ -5,49 +5,30 @@ namespace FractalArtPlugin.Application;
 
 public interface IArtworkRenderPipeline
 {
-    Task<RgbaImage> RenderAsync(ArtworkDefinition artwork, RenderContext context, CancellationToken cancellationToken);
+    Task<ArtworkRenderResult> RenderAsync(
+        ArtworkDefinition artwork,
+        RenderContext context,
+        CancellationToken cancellationToken);
 }
 
 internal sealed class ArtworkRenderPipeline(
     IArtworkValidator validator,
-    IEnumerable<IArtworkGeneratorRenderer> renderers) : IArtworkRenderPipeline
+    IArtworkGraphExecutor executor) : IArtworkRenderPipeline
 {
-    private readonly IReadOnlyDictionary<FractalGeneratorKind, IArtworkGeneratorRenderer> _renderers =
-        CreateRendererMap(renderers);
-
-    public async Task<RgbaImage> RenderAsync(
+    public Task<ArtworkRenderResult> RenderAsync(
         ArtworkDefinition artwork,
         RenderContext context,
         CancellationToken cancellationToken)
     {
         validator.Validate(artwork);
         cancellationToken.ThrowIfCancellationRequested();
-        if (!_renderers.TryGetValue(artwork.GeneratorKind, out var renderer))
-        {
-            throw new NotSupportedException($"没有登记生成器 {artwork.GeneratorKind} 的渲染策略。");
-        }
-
-        return await renderer.RenderAsync(artwork, context, cancellationToken).ConfigureAwait(false);
-    }
-
-    private static IReadOnlyDictionary<FractalGeneratorKind, IArtworkGeneratorRenderer> CreateRendererMap(
-        IEnumerable<IArtworkGeneratorRenderer> renderers)
-    {
-        ArgumentNullException.ThrowIfNull(renderers);
-        try
-        {
-            return renderers.ToDictionary(renderer => renderer.Kind);
-        }
-        catch (ArgumentException exception)
-        {
-            throw new InvalidOperationException("每种生成器必须且只能登记一个渲染策略。", exception);
-        }
+        return executor.ExecuteAsync(artwork, context, cancellationToken);
     }
 }
 
 public interface IPngEncoder
 {
-    byte[] Encode(RgbaImage image, CancellationToken cancellationToken);
+    byte[] Encode(ImageSurface image, CancellationToken cancellationToken);
 }
 
 public interface IAtomicFileWriter
@@ -72,18 +53,18 @@ internal sealed class ArtworkExporter(
             throw new ArgumentException("导出路径不能为空。", nameof(path));
         }
 
-        var image = await pipeline.RenderAsync(
+        var result = await pipeline.RenderAsync(
             artwork,
             RenderContext.ForExport(artwork),
             cancellationToken).ConfigureAwait(false);
-        var png = encoder.Encode(image, cancellationToken);
+        var png = encoder.Encode(result.Image, cancellationToken);
         await writer.WriteAsync(path, png, cancellationToken).ConfigureAwait(false);
     }
 }
 
 public interface IPreviewImageFactory
 {
-    Bitmap? Create(RgbaImage image, CancellationToken cancellationToken);
+    Bitmap? Create(ImageSurface image, CancellationToken cancellationToken);
 }
 
 public interface IArtworkExportDialog
@@ -94,8 +75,8 @@ public interface IArtworkExportDialog
 /// <summary>为测试和状态栏提供稳定指纹；它不参与缓存身份，也不替代作品的版本化配方。</summary>
 internal static class RenderFingerprint
 {
-    public static string Create(RgbaImage image) =>
-        Convert.ToHexString(SHA256.HashData(image.Pixels)).ToLowerInvariant()[..16];
+    public static string Create(ImageSurface image) =>
+        Convert.ToHexString(SHA256.HashData(image.Pixels.Span)).ToLowerInvariant()[..16];
 }
 
 public interface IArtworkHistory

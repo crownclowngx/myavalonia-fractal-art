@@ -51,7 +51,7 @@ internal sealed class DoubleJuliaKernel : IJuliaKernel
             }
         }
 
-        return new ScalarField(context.Width, context.Height, values, escaped,
+        return ScalarField.FromOwned(context.Width, context.Height, values, escaped,
             new RenderDiagnostics(Name, context.ConfiguredPrecisionDigits, context.EffectivePrecisionDigits, 1, 0, 0));
     }
 }

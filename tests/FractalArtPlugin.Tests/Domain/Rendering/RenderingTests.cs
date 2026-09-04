@@ -61,7 +61,7 @@ public sealed class RenderingTests
     [Fact]
     public void Png编码器产生带正确尺寸的标准签名和Ihdr()
     {
-        var image = new RgbaImage(2, 1, [255, 0, 0, 255, 0, 255, 0, 128]);
+        var image = new ImageSurface(2, 1, [255, 0, 0, 255, 0, 255, 0, 128]);
 
         var bytes = new PngEncoder().Encode(image, CancellationToken.None);
 

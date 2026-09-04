@@ -49,6 +49,7 @@ public sealed class RecursivePathTests
         var artwork = ArtworkDefinition.CreateDefault() with
         {
             GeneratorKind = FractalGeneratorKind.RecursiveTree,
+            Graph = ArtworkGraphFactory.Create(FractalGeneratorKind.RecursiveTree),
             RecursiveTree = ArtworkDefinition.CreateDefault().RecursiveTree with { Depth = 11, Branches = 3 }
         };
 
@@ -69,6 +70,7 @@ public sealed class RecursivePathTests
         var artwork = ArtworkDefinition.CreateDefault() with
         {
             GeneratorKind = FractalGeneratorKind.RecursiveTree,
+            Graph = ArtworkGraphFactory.Create(FractalGeneratorKind.RecursiveTree),
             RecursiveTree = definition
         };
 
@@ -81,18 +83,11 @@ public sealed class RecursivePathTests
     [Fact]
     public async Task 路径描边进入统一预览导出图像面并按层级产生颜色()
     {
-        var pathGenerator = new RecursiveTreePathGenerator();
-        var strokeRenderer = new PathStrokeRenderer();
-        var pipeline = new ArtworkRenderPipeline(
-            new ArtworkValidator(),
-            new IArtworkGeneratorRenderer[]
-            {
-                new JuliaArtworkRenderer(new JuliaFieldGenerator(), new LinearGradientMapper()),
-                new RecursiveTreeArtworkRenderer(pathGenerator, strokeRenderer)
-            });
+        var pipeline = TestArtworkPipeline.Create();
         var artwork = ArtworkDefinition.CreateDefault() with
         {
             GeneratorKind = FractalGeneratorKind.RecursiveTree,
+            Graph = ArtworkGraphFactory.Create(FractalGeneratorKind.RecursiveTree),
             Canvas = new CanvasDefinition(160, 120, new RgbaColor(1, 2, 3)),
             RecursiveTree = ArtworkDefinition.CreateDefault().RecursiveTree with
             {
@@ -104,7 +99,10 @@ public sealed class RecursivePathTests
             Gradient = new GradientDefinition(new RgbaColor(180, 40, 20), new RgbaColor(20, 220, 80), new RgbaColor(0, 0, 0))
         };
 
-        var image = await pipeline.RenderAsync(artwork, RenderContext.ForExport(artwork), CancellationToken.None);
+        var image = (await pipeline.RenderAsync(
+            artwork,
+            RenderContext.ForExport(artwork),
+            CancellationToken.None)).Image;
 
         Assert.Equal(160, image.Width);
         Assert.Equal(120, image.Height);
@@ -124,7 +122,7 @@ public sealed class RecursivePathTests
     {
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
-        var artwork = ArtworkDefinition.CreateDefault() with { GeneratorKind = FractalGeneratorKind.RecursiveTree };
+        var artwork = ArtworkDefinition.CreateDefault().WithGeneratorKind(FractalGeneratorKind.RecursiveTree);
         var generator = new RecursiveTreePathGenerator();
 
         Assert.ThrowsAny<OperationCanceledException>(() =>

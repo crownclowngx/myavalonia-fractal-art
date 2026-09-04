@@ -119,19 +119,13 @@ public sealed class LSystemTests
                 Canvas = new CanvasDefinition(96, 96, new RgbaColor(1, 2, 3))
             },
             "lsystem-koch");
-        var validator = new ArtworkValidator();
         var lSystemValidator = new LSystemValidator();
-        var pipeline = new ArtworkRenderPipeline(
-            validator,
-            [new LSystemArtworkRenderer(
-                new LSystemExpander(lSystemValidator),
-                new TurtlePathInterpreter(),
-                new PathStrokeRenderer())]);
+        var pipeline = TestArtworkPipeline.Create(lSystemValidator);
 
-        var image = await pipeline.RenderAsync(
+        var image = (await pipeline.RenderAsync(
             artwork,
             RenderContext.ForExport(artwork),
-            CancellationToken.None);
+            CancellationToken.None)).Image;
 
         Assert.Equal("l-system", image.Diagnostics?.Kernel);
         Assert.Contains(
@@ -151,14 +145,12 @@ public sealed class LSystemTests
             ArtworkDefinition.CreateDefault() with { Canvas = new CanvasDefinition(96, 96, new RgbaColor(1, 2, 3)) },
             id);
         var lSystemValidator = new LSystemValidator();
-        var pipeline = new ArtworkRenderPipeline(
-            new ArtworkValidator(lSystemValidator),
-            [new LSystemArtworkRenderer(
-                new LSystemExpander(lSystemValidator),
-                new TurtlePathInterpreter(),
-                new PathStrokeRenderer())]);
+        var pipeline = TestArtworkPipeline.Create(lSystemValidator);
 
-        var image = await pipeline.RenderAsync(artwork, RenderContext.ForExport(artwork), CancellationToken.None);
+        var image = (await pipeline.RenderAsync(
+            artwork,
+            RenderContext.ForExport(artwork),
+            CancellationToken.None)).Image;
 
         Assert.Equal(expectedFingerprint, RenderFingerprint.Create(image));
     }

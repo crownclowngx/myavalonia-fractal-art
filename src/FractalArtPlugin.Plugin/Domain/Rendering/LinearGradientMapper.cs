@@ -4,20 +4,22 @@ namespace FractalArtPlugin.Domain.Rendering;
 
 internal sealed class LinearGradientMapper : IGradientMapper
 {
-    public RgbaImage Map(ScalarField field, GradientDefinition gradient, CancellationToken cancellationToken)
+    public ImageSurface Map(ScalarField field, GradientDefinition gradient, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(field);
         ArgumentNullException.ThrowIfNull(gradient);
         var pixels = new byte[checked(field.Width * field.Height * 4)];
-        for (var index = 0; index < field.Values.Length; index++)
+        var values = field.Values.Span;
+        var escaped = field.Escaped.Span;
+        for (var index = 0; index < values.Length; index++)
         {
             if ((index & 4095) == 0)
             {
                 cancellationToken.ThrowIfCancellationRequested();
             }
 
-            var color = field.Escaped[index]
-                ? Interpolate(gradient.Start, gradient.End, field.Values[index])
+            var color = escaped[index]
+                ? Interpolate(gradient.Start, gradient.End, values[index])
                 : gradient.Interior;
             var offset = index * 4;
             pixels[offset] = color.Red;
@@ -26,7 +28,7 @@ internal sealed class LinearGradientMapper : IGradientMapper
             pixels[offset + 3] = color.Alpha;
         }
 
-        return new RgbaImage(field.Width, field.Height, pixels, field.Diagnostics);
+        return ImageSurface.FromOwned(field.Width, field.Height, pixels, field.Diagnostics);
     }
 
     private static RgbaColor Interpolate(RgbaColor start, RgbaColor end, float amount)

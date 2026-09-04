@@ -125,7 +125,7 @@ internal sealed class PerturbationJuliaKernel : IJuliaKernel
             }
         });
 
-        return new ScalarField(context.Width, context.Height, values, escaped,
+        return ScalarField.FromOwned(context.Width, context.Height, values, escaped,
             new RenderDiagnostics(
                 Name,
                 context.ConfiguredPrecisionDigits,

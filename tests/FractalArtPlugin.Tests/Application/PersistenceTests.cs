@@ -18,6 +18,7 @@ public sealed class PersistenceTests
             Seed = 987654321,
             Canvas = new CanvasDefinition(2048, 1536, new RgbaColor(1, 2, 3, 4)),
             GeneratorKind = FractalGeneratorKind.RecursiveTree,
+            Graph = ArtworkGraphFactory.Create(FractalGeneratorKind.RecursiveTree),
             Julia = new JuliaDefinition("-0.12", "0.34", "1.5e-80", "-0.8", "0.156", 777, true, 128),
             Mandelbrot = new MandelbrotDefinition("-0.743", "0.131", "0.004", 900, true, 160),
             RecursiveTree = new RecursiveTreeDefinition(8, 3, 32, 0.66, 0.2, 0.24, 5.5),
@@ -58,7 +59,7 @@ public sealed class PersistenceTests
     public void 未知作品格式版本被明确拒绝且不会静默迁移()
     {
         var valid = _codec.Encode(ArtworkDefinition.CreateDefault());
-        var json = valid.Payload.GetRawText().Replace("\"formatVersion\":5", "\"formatVersion\":99", StringComparison.Ordinal);
+        var json = valid.Payload.GetRawText().Replace("\"formatVersion\":6", "\"formatVersion\":99", StringComparison.Ordinal);
         using var payload = JsonDocument.Parse(json);
         var content = new DocumentContent(ArtworkSnapshotCodec.ContentSchemaVersion, payload.RootElement);
 
@@ -161,7 +162,7 @@ public sealed class PersistenceTests
     }
 
     [Fact]
-    public void V5快照保存两类生成器配方但不保存运行态对象()
+    public void V6快照保存创作图效果链和生成器配方但不保存运行态对象()
     {
         var content = _codec.Encode(ArtworkDefinition.CreateDefault());
         var json = content.Payload.GetRawText();
@@ -171,13 +172,65 @@ public sealed class PersistenceTests
         Assert.DoesNotContain("kernel", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("transient", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("previewImage", json, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(5, content.Payload.GetProperty("formatVersion").GetInt32());
+        Assert.Equal(6, content.Payload.GetProperty("formatVersion").GetInt32());
         Assert.True(content.Payload.TryGetProperty("generatorKind", out _));
         Assert.True(content.Payload.TryGetProperty("mandelbrot", out _));
         Assert.True(content.Payload.TryGetProperty("recursiveTree", out _));
         Assert.True(content.Payload.TryGetProperty("lSystem", out _));
         Assert.True(content.Payload.TryGetProperty("exploration", out _));
+        Assert.True(content.Payload.TryGetProperty("graph", out _));
+        Assert.Empty(content.Payload.GetProperty("effects").GetProperty("effects").EnumerateArray());
     }
+
+    [Fact]
+    public void V5作品迁移为匹配生成器的规范图和空效果链()
+    {
+        var source = ArtworkDefinition.CreateDefault().WithGeneratorKind(FractalGeneratorKind.Mandelbrot);
+        var root = JsonNode.Parse(_codec.Encode(source).Payload.GetRawText())!.AsObject();
+        root["formatVersion"] = 5;
+        root.Remove("graph");
+        root.Remove("effects");
+
+        var migrated = _codec.Decode(new DocumentContent(
+            ArtworkSnapshotCodec.ContentSchemaVersion,
+            JsonSerializer.SerializeToElement(root)));
+
+        Assert.Equal(ArtworkDefinition.CurrentFormatVersion, migrated.FormatVersion);
+        Assert.Equal(ArtworkGraphFactory.Create(FractalGeneratorKind.Mandelbrot), migrated.Graph);
+        Assert.Equal(EffectChainDefinition.Empty, migrated.Effects);
+    }
+
+    [Fact]
+    public void V6缺失图未知图版本循环和未知效果都被明确拒绝()
+    {
+        var encoded = _codec.Encode(ArtworkDefinition.CreateDefault());
+
+        var missing = JsonNode.Parse(encoded.Payload.GetRawText())!.AsObject();
+        missing.Remove("graph");
+        Assert.Throws<InvalidDataException>(() => DecodeNode(missing));
+
+        var unknownVersion = JsonNode.Parse(encoded.Payload.GetRawText())!.AsObject();
+        unknownVersion["graph"]!["version"] = 99;
+        var versionError = Assert.Throws<ArtworkGraphValidationException>(() => DecodeNode(unknownVersion));
+        Assert.Contains(versionError.Diagnostics, item => item.Code == "graph.version");
+
+        var cycle = JsonNode.Parse(encoded.Payload.GetRawText())!.AsObject();
+        var connections = cycle["graph"]!["connections"]!.AsArray();
+        connections[1] = JsonNode.Parse(
+            """{"sourceNodeId":"output","sourcePort":"image","targetNodeId":"effects","targetPort":"image"}""");
+        var cycleError = Assert.Throws<ArtworkGraphValidationException>(() => DecodeNode(cycle));
+        Assert.Contains(cycleError.Diagnostics, item => item.Code == "graph.cycle");
+
+        var effect = JsonNode.Parse(encoded.Payload.GetRawText())!.AsObject();
+        effect["effects"]!["effects"]!.AsArray().Add(JsonNode.Parse(
+            """{"typeId":"future.glow","version":1,"isEnabled":true}"""));
+        var effectError = Assert.Throws<NotSupportedException>(() => DecodeNode(effect));
+        Assert.Contains("future.glow", effectError.Message, StringComparison.Ordinal);
+    }
+
+    private ArtworkDefinition DecodeNode(JsonObject root) => _codec.Decode(new DocumentContent(
+        ArtworkSnapshotCodec.ContentSchemaVersion,
+        JsonSerializer.SerializeToElement(root)));
 
     [Fact]
     public void V2作品显式迁移为空探索状态且不改变渲染配方()
@@ -261,6 +314,7 @@ public sealed class PersistenceTests
         var source = ArtworkDefinition.CreateDefault() with
         {
             GeneratorKind = FractalGeneratorKind.RecursiveTree,
+            Graph = ArtworkGraphFactory.Create(FractalGeneratorKind.RecursiveTree),
             RecursiveTree = expectedTree
         };
         var root = JsonNode.Parse(_codec.Encode(source).Payload.GetRawText())!.AsObject();
