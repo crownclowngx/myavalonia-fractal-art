@@ -1,5 +1,6 @@
 using Avalonia.Media.Imaging;
 using FractalArtPlugin.Application;
+using FractalArtPlugin.Application.Workflow;
 using FractalArtPlugin.Features.Artwork;
 using MyAvaloniaManagement.PluginSdk;
 using Xunit;
@@ -8,6 +9,44 @@ namespace FractalArtPlugin.Tests;
 
 public sealed class DocumentTests
 {
+    [Fact]
+    public async Task ImageLab导出参数不影响Dirty历史或ArtworkSnapshot()
+    {
+        using var fixture = new DocumentFixture();
+        var document = fixture.CreateDocument();
+        await document.InitializeAsync(new NewDocumentActivation("效果会话"), CancellationToken.None);
+        var before = await document.CaptureSaveSnapshotAsync(CancellationToken.None);
+
+        document.ImageLabBlurEnabled = false;
+        document.ImageLabBlurSigma = 8.5;
+        document.ImageLabBloomThreshold = 0.25;
+        document.ImageLabBloomStrength = 2.2;
+        document.ImageLabGrainAmount = 12;
+        document.ImageLabGrainSeed = 77;
+
+        var after = await document.CaptureSaveSnapshotAsync(CancellationToken.None);
+        Assert.False(document.IsDirty);
+        Assert.False(document.CanUndo);
+        Assert.Equal(before.Content.SchemaVersion, after.Content.SchemaVersion);
+        Assert.Equal(before.Content.Payload.GetRawText(), after.Content.Payload.GetRawText());
+    }
+
+    [Fact]
+    public async Task ImageLab不可用时不打开保存框也不调用协调器()
+    {
+        using var fixture = new DocumentFixture();
+        var coordinator = new UnavailableImageLabCoordinator();
+        var dialog = new RecordingImageLabDialog();
+        var document = fixture.CreateDocument(coordinator, dialog);
+        await document.InitializeAsync(new NewDocumentActivation("无 ImageLab"), CancellationToken.None);
+
+        await document.ExportWithImageLabCommand.ExecuteAsync(null);
+
+        Assert.Equal(0, dialog.Calls);
+        Assert.Equal(0, coordinator.ExportCalls);
+        Assert.Contains("不可用", document.StatusMessage, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task 新建修改保存确认和旧修订确认遵守Dirty语义()
     {
@@ -334,7 +373,9 @@ public sealed class DocumentTests
 
         public ImmediatePipeline Pipeline => Assert.IsType<ImmediatePipeline>(_pipeline);
 
-        public FractalArtworkDocument CreateDocument()
+        public FractalArtworkDocument CreateDocument(
+            IImageLabArtEffectExportCoordinator? imageLabCoordinator = null,
+            IImageLabExportDialog? imageLabExportDialog = null)
         {
             var validator = new ArtworkValidator();
             var generator = new VariationGenerator(validator);
@@ -349,7 +390,9 @@ public sealed class DocumentTests
                 new ArtisticParameterMapper(),
                 new VariationExplorer(generator, _pipeline),
                 new ArtworkPresetCatalog(),
-                _lifetime);
+                _lifetime,
+                imageLabCoordinator: imageLabCoordinator,
+                imageLabExportDialog: imageLabExportDialog);
         }
 
         public void Dispose() => _lifetime.Dispose();
@@ -503,6 +546,31 @@ public sealed class DocumentTests
             }
 
             _source.Dispose();
+        }
+    }
+
+    private sealed class UnavailableImageLabCoordinator : IImageLabArtEffectExportCoordinator
+    {
+        public int ExportCalls { get; private set; }
+        public bool IsAvailable() => false;
+
+        public Task<ImageLabExportResult> ExportAsync(
+            ArtworkDefinition artwork, ImageLabEffectSettings effects, string outputPath,
+            IProgress<int>? progress, CancellationToken cancellationToken)
+        {
+            ExportCalls++;
+            throw new InvalidOperationException("不可调用");
+        }
+    }
+
+    private sealed class RecordingImageLabDialog : IImageLabExportDialog
+    {
+        public int Calls { get; private set; }
+
+        public Task<string?> PickOutputPathAsync(string suggestedName, CancellationToken cancellationToken)
+        {
+            Calls++;
+            return Task.FromResult<string?>(null);
         }
     }
 }

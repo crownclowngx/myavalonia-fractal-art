@@ -48,8 +48,9 @@
 - 作品格式升级到 v4，保存生成器、树参数及候选路径配方，v1/v2/v3 显式迁移为 Julia；
 - G0005.1 增加时间逃逸/L-System 导航、Mandelbrot 双精度与任意精度内核、受预算规则展开和 Turtle 路径解释；
 - G0006 增加版本化类型安全创作图、空效果链、只读图像/遮罩，以及每个 Document 独占的有界 LRU 节点缓存；
-- 当前本地自动化共 113 项测试通过；G0003 Release 输出指纹基准和四类代表 RGBA 指纹保持稳定；
-- 当前没有 Tool、Workbench Command、默认快捷键、ImageLab 接入或 Workflow Action。
+- G0007 增加会话级 ImageLab 导出参数、文件式内部后处理，以及供 Studio 使用的 Render/Release Action；
+- 当前本地自动化共 126 项测试通过；G0003 Release 输出指纹基准和四类代表 RGBA 指纹保持稳定；
+- 当前仍没有 Tool、Workbench Command、默认快捷键或实时 ImageLab 预览。
 
 阶段实施事实、自动化证据和待人工验收见 [`docs/refactoring`](refactoring/README.md)。
 
@@ -59,12 +60,12 @@ ImageLab 当前是由多个独立 Persistable Document 组成的图像实验产�
 
 当前需要明确：
 
-- ImageLab 尚未登记 Workflow Action；
-- ImageLab 尚未提供供其他插件实时调用的通用艺术效果目录；
-- Bloom、Glow、通用渐变映射、位移、颗粒等此前讨论的艺术效果不能被视为现成能力；
-- ImageLab 的现有算法有复用价值，但需要先识别并抽离无 UI 的计算核心或正式公开跨插件契约。
+- ImageLab 已登记文件式 `apply-art-effects-file` Workflow Action；
+- 首批共享核心包含确定性 Gaussian Blur、Bloom 和 Grain，不包含实时效果目录；
+- Shared Domain 不引用 Avalonia、Workflow、JSON、DI 或文件系统；
+- 两插件不共享 CLR DTO 或二进制库，只通过 File Artifact v1 描述对象交互。
 
-因此，Fractal Art 不应在初期假定 ImageLab 已经是一个可直接注入的效果引擎。
+因此，Fractal Art 把 ImageLab 视为可选的受治理文件处理 Provider，而不是可直接注入的效果引擎。
 
 ### 2.3 Workflow Studio 当前形态
 
@@ -72,7 +73,7 @@ ImageLab 当前是由多个独立 Persistable Document 组成的图像实验产�
 
 当前 SDK 还存在以下边界：
 
-- 同一插件不能同时登记为 Workflow Action Provider 和 Consumer；
+- Host 已允许同一插件同时登记 Provider 和 Consumer，并过滤自有 Action、拒绝自调用与 Handler 嵌套调用；
 - Action 输入输出通过 SDK、BCL 和 `JsonElement` 跨插件边界传递；
 - 大型像素缓冲区、插件私有对象和 ViewModel 不应直接跨 ALC 传递；
 - Workflow Studio 适合编排粗粒度、可治理、可记录的任务，不适合承担拖动参数时每帧触发的实时预览。
@@ -772,38 +773,38 @@ L-System
 
 **目标**
 
-建立真实可维护的 ImageLab 复用方式，而不是直接引用另一个插件的 UI 或私有 Document。
+建立真实可维护的文件式 ImageLab 复用方式，而不是直接引用另一个插件的 UI、私有 Document 或 DI 服务。
 
 **实施内容**
 
-- 盘点 ImageLab 中可以抽离的无 UI 算法；
-- 决定共享算法包的所有权、版本和测试责任；
-- 优先复用或实现渐变、调色板、颜色转换和卷积基础；
-- 增加 Blur、Glow/Bloom、Grain 等第一批艺术效果；
-- 为效果声明输入、参数、预览质量和确定性；
-- 保持 Fractal Art 在 ImageLab 插件未安装时仍可运行。
+- ImageLab 内建立无 UI 的 Blur、Bloom、Grain Shared Domain；
+- 使用 File Artifact v1 和 ImageLab Provider Action 传输文件，不共享插件二进制；
+- Fractal Art 以 Consumer 身份提供“经 ImageLab 导出”，同时提供 Render/Release Provider Action；
+- Studio 继续使用 Definition v2 顺序编排三个既有 Action，不修改生产代码；
+- 效果只在导出时应用，不进入 ArtworkSnapshot v6，也不提供实时预览；
+- ImageLab 未安装时普通创作、保存和原始 PNG 导出继续可用。
 
 **内部链路**
 
 ```text
-Fractal Field
-→ Gradient Map
-→ Glow / Bloom
-→ Grain
-→ Output
+Fractal 最终质量 PNG
+→ File Artifact v1
+→ ImageLab Blur / Bloom / Grain
+→ persistent PNG
 ```
 
 **阶段形态**
 
-作品开始具备明显的艺术完成度。用户看到的是 Fractal Document 内的非破坏性效果链，不需要跳转到 ImageLab Document。
+用户在 Fractal Document 内设置后处理参数并一键导出，不需要打开 ImageLab Document；体验明确接受无实时预览。
 
 **完成标准**
 
 - Fractal Art 不引用 ImageLab 的 View、ViewModel 或插件私有服务；
-- 共享算法包没有 Avalonia UI 依赖；
-- 改变效果不重新计算无关生成步骤；
-- 预览和导出效果语义一致；
-- 每个复用算法有明确来源和跨项目测试责任。
+- ImageLab Shared Domain 没有 Avalonia UI、Workflow、JSON、DI 或文件系统依赖；
+- 大图不进入 Workflow JSON；
+- 效果参数不影响 Dirty、Undo/Redo 和持久化；
+- transient/run/persistent 的清理责任明确；
+- Fractal 和 ImageLab 生产程序集不存在相互引用。
 
 ### G0008：多图层、遮罩与跨分形组合
 
@@ -926,13 +927,13 @@ Attractor / IFS
 
 **目标**
 
-让 Workflow Studio 能够以粗粒度、受治理方式调用 Fractal Art，而不把实时创作管线错误地变成跨插件 JSON 像素流。
+在 G0007 首个 Render/Release Action 基础上扩展批量渲染能力，而不把实时创作管线变成跨插件 JSON 像素流。
 
 **实施内容**
 
-- 将 Fractal Art 明确登记为 Provider；
-- 设计稳定、受限、可审计的 Action Schema；
-- 优先提供 `render-artwork`、`render-variations` 或 `export-artwork`；
+- 复核并演进 G0007 已登记的 Provider；
+- 在保持兼容的前提下扩展稳定、受限、可审计的 Action Schema；
+- 增加 `render-variations` 或批量 `export-artwork`；
 - 输入使用作品定义或受治理资源引用；
 - 输出使用结果元数据和正式 Artifact 身份；
 - 声明风险、确认策略、预算、进度和取消语义；
@@ -944,7 +945,7 @@ Workflow Studio 可以把“渲染分形作品”作为工作流步骤，与其�
 
 **完成标准**
 
-- Fractal Art 不同时登记 Provider 和 Consumer；
+- Fractal Art 的双角色继续受 Host 自调用和嵌套调用治理；
 - 调用者身份、Run 和授权由 Host 负责；
 - 不在 JSON 中传递大型原始像素；
 - Action 调用取消后不留下错误的成功产物；
@@ -955,13 +956,13 @@ Workflow Studio 可以把“渲染分形作品”作为工作流步骤，与其�
 
 **目标**
 
-在 ImageLab 也具备稳定 Provider Action 后，由 Workflow Studio 组合跨插件生产流程。
+在 G0007 三步流程基础上补齐批量定义、真实 Host 产品化示例和故障恢复体验。
 
 **实施内容**
 
-- 由 ImageLab 独立定义其 Provider Action 和风险边界；
-- 使用 Host 正式 Artifact 契约传递图像结果；
-- 在 Workflow Studio 中建立“分形渲染—图像后处理—输出”的示例定义；
+- 演进 ImageLab 已有 Provider Action 和风险边界；
+- 继续使用文件描述对象传递图像结果，是否提升为 Host 正式 Artifact 类型另行决策；
+- 提供“分形渲染—图像后处理—释放”的产品化示例定义；
 - 验证插件缺失、版本不兼容、处理中断和部分输出；
 - 明确 Workflow 编排与 Fractal Document 实时效果的差异。
 
@@ -971,9 +972,9 @@ Workflow Studio 可以把“渲染分形作品”作为工作流步骤，与其�
 
 **完成标准**
 
-- 跨插件资源引用由 Host 治理；
+- 跨插件文件由 File Artifact v1 所有权和 Host Action 调用共同治理；
 - Workflow Studio 只承担 Consumer；
-- Fractal Art 和 ImageLab 各自只处理自己拥有的 Action；
+- Fractal Art 和 ImageLab Handler 各自只处理自己拥有的 Action，编排仅在 Studio/应用层；
 - 不存在插件私有类型跨 ALC 泄漏；
 - 失败和取消不会覆盖原始作品或输入资源。
 
@@ -1006,7 +1007,7 @@ Workflow Studio 可以把“渲染分形作品”作为工作流步骤，与其�
 
 ## 10. 推荐的实际开工顺序
 
-当前进度（2026-09-04）：`G0001 ✓ → G0002 ✓ → G0003 ✓ → G0004 ✓ → G0005 ✓ → G0005.1 ✓ → G0006 ✓ → G0007`。其中勾选表示代码与本地自动化门禁完成，
+当前进度（2026-09-04）：`G0001 ✓ → G0002 ✓ → G0003 ✓ → G0004 ✓ → G0005 ✓ → G0005.1 ✓ → G0006 ✓ → G0007（代码已实施，最终门禁中）`。其中勾选表示代码与本地自动化门禁完成，
 不代表真实 Host、正式 ZIP 或全部人工验收已经封板。
 
 严格按以下顺序推进：

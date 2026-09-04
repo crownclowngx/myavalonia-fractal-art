@@ -217,6 +217,27 @@
             </StackPanel>
           </Expander>
 
+          <Expander Header="ImageLab 后处理（仅导出时应用）" IsExpanded="False">
+            <StackPanel Margin="0,8,0,0" Spacing="7">
+              <TextBlock Foreground="#8791AD" Text="不改变作品和预览；先写临时 PNG，再经 Host Workflow Gateway 调用 ImageLab。" TextWrapping="Wrap" />
+              <CheckBox Foreground="#D4DAED" Content="Gaussian Blur" IsChecked="{Binding ImageLabBlurEnabled}" />
+              <NumericUpDown Minimum="0" Maximum="10" Increment="0.1" Value="{Binding ImageLabBlurSigma}" PlaceholderText="Blur Sigma" />
+              <CheckBox Foreground="#D4DAED" Content="Bloom" IsChecked="{Binding ImageLabBloomEnabled}" />
+              <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                <NumericUpDown Grid.Column="0" Minimum="0" Maximum="1" Increment="0.01" Value="{Binding ImageLabBloomThreshold}" PlaceholderText="阈值" />
+                <NumericUpDown Grid.Column="1" Minimum="0.1" Maximum="10" Increment="0.1" Value="{Binding ImageLabBloomSigma}" PlaceholderText="Sigma" />
+              </Grid>
+              <NumericUpDown Minimum="0" Maximum="4" Increment="0.1" Value="{Binding ImageLabBloomStrength}" PlaceholderText="Bloom 强度" />
+              <CheckBox Foreground="#D4DAED" Content="Grain" IsChecked="{Binding ImageLabGrainEnabled}" />
+              <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                <NumericUpDown Grid.Column="0" Minimum="0" Maximum="100" Increment="0.5" Value="{Binding ImageLabGrainAmount}" PlaceholderText="颗粒强度" />
+                <NumericUpDown Grid.Column="1" Minimum="-9223372036854775808" Maximum="9223372036854775807" Value="{Binding ImageLabGrainSeed}" PlaceholderText="Seed" />
+              </Grid>
+              <Button Command="{Binding ExportWithImageLabCommand}" Content="经 ImageLab 导出 PNG" />
+              <Button Command="{Binding ExportWorkflowRecipeCommand}" Content="导出 Workflow 配方" />
+            </StackPanel>
+          </Expander>
+
           <Button Margin="0,8,0,0" Command="{Binding CancelOperationCommand}" Content="取消当前渲染/导出" IsEnabled="{Binding IsOperationBusy}" />
         </StackPanel>
       </ScrollViewer>

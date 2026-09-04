@@ -21,6 +21,7 @@ public sealed partial class App : Avalonia.Application
         {
             var services = new ServiceCollection();
             services.AddFractalArtPluginServices();
+            services.AddSingleton<IWorkflowActionGateway, UnavailableWorkflowActionGateway>();
             services.AddSingleton<IPluginWindowInteraction, StandaloneWindowInteraction>();
             services.AddScoped<IDocumentLifetime, PreviewDocumentLifetime>();
             services.AddScoped<FractalArtworkDocument>();

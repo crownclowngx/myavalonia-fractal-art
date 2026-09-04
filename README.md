@@ -1,6 +1,6 @@
 # FractalArtPlugin
 
-这是 `myavalonia.plugin.fractal.art` 的 Managed Plugin 解决方案。当前已完成 G0001–G0006：
+这是 `myavalonia.plugin.fractal.art` 的 Managed Plugin 解决方案。当前已完成 G0001–G0007 的代码实施：
 产品化插件壳、可持久化空作品闭环，以及 Julia → 标量场 → 线性渐变 → 预览/PNG 导出的首条纵向切片。
 画布支持鼠标拖动平移和以指针为锚点的滚轮缩放；Julia 配方使用高精度十进制文本持久化，并在深缩放时
 自动切换到 32–1024 位可配置的任意精度定点内核。
@@ -9,6 +9,8 @@ G0005 增加递归树 → 路径几何 → 分层描边的第二类数据形态�
 G0005.1 已把创作入口重构为“逃逸时间 / L-System”：逃逸时间支持 Julia、Mandelbrot 与可编辑示例；
 L-System 支持 5 个经典示例、公理/产生式自定义、受预算展开和 Turtle 路径解释。
 G0006 将四类生成器统一接入可持久化的类型安全创作图，并增加 Document Scope 内的节点 LRU 缓存和空的非破坏性效果链底座。
+G0007 增加 Fractal Provider + Consumer 双角色、文件式 ImageLab 后处理、Workflow Recipe v1，以及供 Studio
+编排的 Render/Release Action；大型图像只经文件系统传递，不修改 Workflow JSON 协议。
 作品格式现为 v6，并显式迁移 v1–v5。
 真实交付物是 `src/FractalArtPlugin.Plugin`；`Standalone` 只负责快速预览同一份 View、Document 与业务服务。
 
@@ -33,5 +35,5 @@ dotnet msbuild src/FractalArtPlugin.Plugin/FractalArtPlugin.Plugin.csproj `
 Standalone 只能验证界面和插件自身对象图；manifest、加载上下文、Document Scope、Dock、Tool 和
 生命周期必须使用真实 Host 做最终验收。
 
-首版保持零 Tool、零 Workbench Command、零默认快捷键。G0001–G0006 的计划、实施方案、结果与门禁证据见
+首版保持零 Tool、零 Workbench Command、零默认快捷键。G0001–G0007 的计划、实施方案、结果与门禁证据见
 [重构实施档案](docs/refactoring/README.md)。

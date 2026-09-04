@@ -42,10 +42,11 @@ Standalone 适合快速检查 AXAML、编译绑定、命令和插件自身对象
 3. [临时部署、正式发布与验收](deployment-and-release.md)
 4. [Workflow Action Provider 与 Consumer 接入](workflow-actions.md)
 5. [Workbench Command 开发说明](workbench-commands.md)
-6. [G0001–G0006 重构实施档案](refactoring/README.md)
+6. [G0001–G0007 重构实施档案](refactoring/README.md)
 7. [G0005.1 双生成器入口与可编辑 L-System 计划](refactoring/G0005.1/plan.md)
 8. [G0003 高精度性能与领域模块化专项档案](refactoring/G0003/precision-performance/result.md)
 9. [G0006 创作图与缓存设计](refactoring/G0006/graph-cache-design.md)
+10. [G0007 双角色、文件 Artifact 与 ImageLab 调用](refactoring/G0007/implementation.md)
 
 ## 开发前记住
 
@@ -55,5 +56,6 @@ Standalone 适合快速检查 AXAML、编译绑定、命令和插件自身对象
 - 新增插件运行时 NuGet 包时，要同时更新根目录 `Directory.Packages.props`、Plugin 项目的
   `PackageReference` 和 `ManagedPluginPrivatePackage`；完整示例见部署文档。
 - 当前交付目标是 Windows x64；插件替换后必须完整重启 Host，不支持热更新。
-- Workflow Action Provider 与 Consumer 是两种互斥角色，选择前先阅读专项文档，不要在同一插件中同时注册。
+- Workflow Action Provider 与 Consumer 可以在 Host 安全治理下由同一插件承担；自有 Action 会从 caller-bound
+  目录过滤，自调用与 Handler 嵌套调用会被拒绝。Fractal 的具体边界见 G0007 专项文档。
 - Workbench Command 只提升跨工作台有价值的用户意图；G0001–G0006 当前保持零全局命令和零快捷键。

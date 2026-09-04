@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using FractalArtPlugin.Application;
 using FractalArtPlugin.Infrastructure;
+using FractalArtPlugin.Application.Workflow;
+using FractalArtPlugin.Infrastructure.Workflow;
 
 namespace FractalArtPlugin.Plugin;
 
@@ -47,6 +49,15 @@ public static class FractalArtPluginServices
         services.AddSingleton<IPreviewImageFactory, AvaloniaPreviewImageFactory>();
         services.AddSingleton<IArtworkExportDialog, ArtworkExportDialog>();
         services.AddTransient<IArtworkHistory, ArtworkHistory>();
+        services.AddSingleton<IWorkflowRecipeCodec, WorkflowRecipeCodec>();
+        services.AddSingleton<IWorkflowRecipeFiles, WorkflowRecipeFiles>();
+        // Artifact 创建依赖当前 Document/Action Scope 的最终质量渲染管线，不能提升为单例。
+        // 过期清理由无 Scope 依赖的生命周期适配器执行，避免根作用域捕获 Scoped 服务。
+        services.AddScoped<IFractalWorkflowArtifactStore, FractalWorkflowArtifactStore>();
+        services.AddSingleton<IImageLabActionClient, ImageLabActionClient>();
+        services.AddScoped<IImageLabArtEffectExportCoordinator, ImageLabArtEffectExportCoordinator>();
+        services.AddSingleton<IWorkflowRecipeDialog, WorkflowRecipeDialog>();
+        services.AddSingleton<IImageLabExportDialog, ImageLabExportDialog>();
         return services;
     }
 }

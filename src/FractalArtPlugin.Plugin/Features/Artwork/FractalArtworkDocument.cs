@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FractalArtPlugin.Application;
+using FractalArtPlugin.Application.Workflow;
 using MyAvaloniaManagement.PluginSdk;
 
 namespace FractalArtPlugin.Features.Artwork;
@@ -25,6 +26,10 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
     private readonly IVariationExplorer _variationExplorer;
     private readonly IArtworkPresetCatalog _presetCatalog;
     private readonly ILSystemValidator _lSystemValidator;
+    private readonly IImageLabArtEffectExportCoordinator? _imageLabCoordinator;
+    private readonly IImageLabExportDialog? _imageLabExportDialog;
+    private readonly IWorkflowRecipeFiles? _workflowRecipeFiles;
+    private readonly IWorkflowRecipeDialog? _workflowRecipeDialog;
     private readonly IDocumentLifetime _lifetime;
     private ArtworkDefinition _artwork = ArtworkDefinition.CreateDefault();
     private DocumentPresentationState _presentation = new("分形作品");
@@ -50,7 +55,11 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         IVariationExplorer variationExplorer,
         IArtworkPresetCatalog presetCatalog,
         IDocumentLifetime lifetime,
-        ILSystemValidator? lSystemValidator = null)
+        ILSystemValidator? lSystemValidator = null,
+        IImageLabArtEffectExportCoordinator? imageLabCoordinator = null,
+        IImageLabExportDialog? imageLabExportDialog = null,
+        IWorkflowRecipeFiles? workflowRecipeFiles = null,
+        IWorkflowRecipeDialog? workflowRecipeDialog = null)
     {
         _validator = validator;
         _snapshotCodec = snapshotCodec;
@@ -64,11 +73,16 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         _presetCatalog = presetCatalog;
         _lifetime = lifetime;
         _lSystemValidator = lSystemValidator ?? new LSystemValidator();
+        _imageLabCoordinator = imageLabCoordinator;
+        _imageLabExportDialog = imageLabExportDialog;
+        _workflowRecipeFiles = workflowRecipeFiles;
+        _workflowRecipeDialog = workflowRecipeDialog;
     }
 
     [ObservableProperty] private Bitmap? _previewImage;
     [ObservableProperty] private bool _isRendering;
     [ObservableProperty] private bool _isExporting;
+    [ObservableProperty] private bool _isImageLabExporting;
     [ObservableProperty] private bool _isExploring;
     [ObservableProperty] private string _statusMessage = "正在准备分形预览…";
     [ObservableProperty] private string _lastPreviewFingerprint = string.Empty;
@@ -78,8 +92,19 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
     public bool IsDirty => _revision != _acceptedRevision;
     public bool CanUndo => _history.CanUndo;
     public bool CanRedo => _history.CanRedo;
-    public bool IsOperationBusy => IsRendering || IsExporting || IsExploring;
+    public bool IsOperationBusy => IsRendering || IsExporting || IsImageLabExporting || IsExploring;
     public bool IsPreviewEmpty => PreviewImage is null;
+
+    // G0007 参数是一次导出会话的临时状态，不写入作品快照，也不推进 Document Revision。
+    [ObservableProperty] private bool _imageLabBlurEnabled = true;
+    [ObservableProperty] private double _imageLabBlurSigma = 1.5d;
+    [ObservableProperty] private bool _imageLabBloomEnabled = true;
+    [ObservableProperty] private double _imageLabBloomThreshold = 0.72d;
+    [ObservableProperty] private double _imageLabBloomSigma = 5d;
+    [ObservableProperty] private double _imageLabBloomStrength = 0.8d;
+    [ObservableProperty] private bool _imageLabGrainEnabled = true;
+    [ObservableProperty] private double _imageLabGrainAmount = 3d;
+    [ObservableProperty] private long _imageLabGrainSeed;
 
     internal ArtworkDefinition Artwork => _artwork;
     public ObservableCollection<VariationCandidateItem> VariationCandidates { get; } = [];
@@ -736,6 +761,123 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         }
     }
 
+    /// <summary>把当前不可变作品渲染到临时 PNG，再从 Document 顶层调用 ImageLab Action。</summary>
+    [RelayCommand]
+    private async Task ExportWithImageLabAsync()
+    {
+        if (_imageLabCoordinator is null || _imageLabExportDialog is null ||
+            !_imageLabCoordinator.IsAvailable())
+        {
+            StatusMessage = "ImageLab 艺术效果当前不可用；普通 PNG 导出仍可使用。";
+            return;
+        }
+
+        CancelAndDispose(ref _exportCancellation);
+        _exportCancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.ClosingToken);
+        var current = _exportCancellation;
+        var token = current.Token;
+        try
+        {
+            var path = await _imageLabExportDialog
+                .PickOutputPathAsync("fractal-art-imagelab.png", token)
+                .ConfigureAwait(true);
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                StatusMessage = "已取消 ImageLab 艺术导出。";
+                return;
+            }
+
+            IsImageLabExporting = true;
+            var effects = new ImageLabEffectSettings(
+                new BlurEffectSettings(ImageLabBlurEnabled, ImageLabBlurSigma),
+                new BloomEffectSettings(
+                    ImageLabBloomEnabled,
+                    ImageLabBloomThreshold,
+                    ImageLabBloomSigma,
+                    ImageLabBloomStrength),
+                new GrainEffectSettings(ImageLabGrainEnabled, ImageLabGrainAmount, ImageLabGrainSeed));
+            var progress = new Progress<int>(percent =>
+                StatusMessage = $"ImageLab 艺术导出处理中 · {percent}%");
+            StatusMessage = "正在渲染 ImageLab 临时输入…";
+            var result = await _imageLabCoordinator.ExportAsync(
+                _artwork, effects, path, progress, token).ConfigureAwait(true);
+            if (!_lifetime.IsClosing)
+            {
+                StatusMessage = $"ImageLab 艺术 PNG 已导出：{result.OutputPath}";
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            if (!_lifetime.IsClosing)
+            {
+                StatusMessage = "ImageLab 艺术导出已取消。";
+            }
+        }
+        catch (Exception exception)
+        {
+            StatusMessage = $"ImageLab 艺术导出失败：{exception.Message}";
+        }
+        finally
+        {
+            if (ReferenceEquals(current, _exportCancellation))
+            {
+                _exportCancellation = null;
+                current.Dispose();
+                IsImageLabExporting = false;
+            }
+        }
+    }
+
+    /// <summary>导出小型版本化配方，供 Workflow Studio 的 Fractal Render Action 使用。</summary>
+    [RelayCommand]
+    private async Task ExportWorkflowRecipeAsync()
+    {
+        if (_workflowRecipeFiles is null || _workflowRecipeDialog is null)
+        {
+            StatusMessage = "Workflow 配方导出当前不可用。";
+            return;
+        }
+
+        CancelAndDispose(ref _exportCancellation);
+        _exportCancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.ClosingToken);
+        var current = _exportCancellation;
+        var token = current.Token;
+        try
+        {
+            var path = await _workflowRecipeDialog
+                .PickSavePathAsync("fractal-art.fractal-workflow.json", token)
+                .ConfigureAwait(true);
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                StatusMessage = "已取消 Workflow 配方导出。";
+                return;
+            }
+            IsExporting = true;
+            await _workflowRecipeFiles.ExportAsync(_artwork, path, token).ConfigureAwait(true);
+            StatusMessage = $"Workflow 配方已导出：{path}";
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            if (!_lifetime.IsClosing)
+            {
+                StatusMessage = "Workflow 配方导出已取消。";
+            }
+        }
+        catch (Exception exception)
+        {
+            StatusMessage = $"Workflow 配方导出失败：{exception.Message}";
+        }
+        finally
+        {
+            if (ReferenceEquals(current, _exportCancellation))
+            {
+                _exportCancellation = null;
+                current.Dispose();
+                IsExporting = false;
+            }
+        }
+    }
+
     [RelayCommand]
     private void CancelOperation()
     {
@@ -1261,6 +1403,7 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
 
     partial void OnIsRenderingChanged(bool value) => OnPropertyChanged(nameof(IsOperationBusy));
     partial void OnIsExportingChanged(bool value) => OnPropertyChanged(nameof(IsOperationBusy));
+    partial void OnIsImageLabExportingChanged(bool value) => OnPropertyChanged(nameof(IsOperationBusy));
     partial void OnIsExploringChanged(bool value) => OnPropertyChanged(nameof(IsOperationBusy));
     partial void OnPreviewImageChanged(Bitmap? value) => OnPropertyChanged(nameof(IsPreviewEmpty));
 

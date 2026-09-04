@@ -4,6 +4,7 @@ using MyAvaloniaManagement.PluginSdk;
 using MyAvaloniaManagement.PluginSdk.UI;
 using FractalArtPlugin.Constants;
 using FractalArtPlugin.Features.Artwork;
+using FractalArtPlugin.Infrastructure.Workflow;
 using FractalArtPlugin.Plugin;
 using Xunit;
 
@@ -28,6 +29,9 @@ public sealed class PluginCompositionTests
         Assert.Empty(registration.Commands);
         Assert.Empty(registration.MenuContributions);
         Assert.Empty(registration.KeyBindings);
+        Assert.True(registration.WorkflowGatewayRequested);
+        Assert.Equal(typeof(FractalArtifactCleanupLifecycle), registration.Lifecycle);
+        Assert.Equal(2, registration.WorkflowActions.Count);
     }
 
     [Fact]
@@ -43,6 +47,7 @@ public sealed class PluginCompositionTests
         var registration = new CapturingRegistration();
         new FractalArtPluginModule().Configure(registration);
         registration.Services.AddSingleton<IPluginWindowInteraction, NullWindowInteraction>();
+        registration.Services.AddSingleton<IWorkflowActionGateway, UnavailableGateway>();
         registration.Services.AddScoped<IDocumentLifetime, TestLifetime>();
         using var provider = registration.Services.BuildServiceProvider(new ServiceProviderOptions
         {
@@ -74,8 +79,15 @@ public sealed class PluginCompositionTests
         internal List<(CommandDescriptor Descriptor, DocumentTypeId Target)> Commands { get; } = [];
         internal List<MenuCommandContributionDescriptor> MenuContributions { get; } = [];
         internal List<KeyBindingContributionDescriptor> KeyBindings { get; } = [];
+        internal List<(WorkflowActionDescriptor Descriptor, Type Handler)> WorkflowActions { get; } = [];
+        internal bool WorkflowGatewayRequested { get; private set; }
+        internal Type? Lifecycle { get; private set; }
 
-        public void UseLifecycle<TLifecycle>() where TLifecycle : class, IPluginLifecycle => throw new NotSupportedException();
+        public void UseLifecycle<TLifecycle>() where TLifecycle : class, IPluginLifecycle
+        {
+            Lifecycle = typeof(TLifecycle);
+            Services.AddSingleton<TLifecycle>();
+        }
 
         public void AddDocument<TDocument, TView>(DocumentDescriptor descriptor)
             where TDocument : class, IPluginDocument where TView : Control, new()
@@ -98,9 +110,13 @@ public sealed class PluginCompositionTests
             Tools.Add((descriptor, typeof(TTool), typeof(TView)));
 
         public void AddWorkflowAction<THandler>(WorkflowActionDescriptor descriptor)
-            where THandler : class, IWorkflowActionHandler => throw new NotSupportedException();
+            where THandler : class, IWorkflowActionHandler
+        {
+            WorkflowActions.Add((descriptor, typeof(THandler)));
+            Services.AddScoped<THandler>();
+        }
 
-        public void UseWorkflowActionGateway() => throw new NotSupportedException();
+        public void UseWorkflowActionGateway() => WorkflowGatewayRequested = true;
 
         public void AddDocumentCommand(CommandDescriptor descriptor, DocumentTypeId targetDocumentTypeId) =>
             Commands.Add((descriptor, targetDocumentTypeId));
@@ -130,5 +146,12 @@ public sealed class PluginCompositionTests
     {
         public CancellationToken ClosingToken => CancellationToken.None;
         public bool IsClosing => false;
+    }
+
+    private sealed class UnavailableGateway : IWorkflowActionGateway
+    {
+        public IReadOnlyList<WorkflowActionDescriptor> GetAvailableActions() => [];
+
+        public IWorkflowActionRun CreateRun() => throw new NotSupportedException();
     }
 }
