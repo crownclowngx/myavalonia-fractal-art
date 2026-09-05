@@ -1,5 +1,9 @@
 # Workflow Action Provider 与 Consumer 接入
 
+G0013 已提供 Studio 内置单张/批量编排、未完成项续跑和显式清理；
+见 [编排与恢复设计](refactoring/G0013/workflow-orchestration-design.md)及[三仓门禁结果](refactoring/G0013/result.md)。
+Fractal 的三个生产 Action 保持兼容，新增目录输出 Action 属于 ImageLab；编排只发生在 Studio 应用层。
+
 当前 Fractal 插件精确引用 Plugin SDK `3.3.0`；Workflow SDK `1.0.0` 为测试提供 Schema、引用路径、
 保守可赋值校验。Fractal 明确登记 Provider + Consumer 双角色，普通创作不依赖 Studio。
 

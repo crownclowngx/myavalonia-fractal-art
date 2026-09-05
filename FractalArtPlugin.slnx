@@ -5,6 +5,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/FractalArtPlugin.Tests/FractalArtPlugin.Tests.csproj" />
+    <Project Path="tests/FractalArtPlugin.WorkflowIntegration.Tests/FractalArtPlugin.WorkflowIntegration.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/FractalArtPlugin.Benchmarks/FractalArtPlugin.Benchmarks.csproj" />

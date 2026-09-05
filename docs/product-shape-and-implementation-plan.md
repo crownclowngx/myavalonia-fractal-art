@@ -1,9 +1,9 @@
 # Fractal Art 插件形态、产品定位与闭环实施计划
 
-> 文档状态：产品与实施基线；G0001–G0012（含 G0003 高精度性能专项）已完成代码与本地自动化门禁，真实 Host 与其余人工验收待完成
+> 文档状态：产品与实施基线；G0001–G0013（含 G0003 高精度性能专项）代码已实施，本地证据见阶段结果；真实 Host 与其余人工验收待完成
 > 插件持久身份：`myavalonia.plugin.fractal.art`  
 > 产品显示名：Fractal Art / 分形画室  
-> 当前工程状态：已完成产品化模板、五类生成器、v8 点云/密度、多图层/遮罩合成、实时 Master Effects、G0007 Workflow 双角色、G0010 数学透镜、G0011 静态本地闭环与 G0012 批量 Workflow Provider
+> 当前工程状态：已完成产品化模板、五类生成器、v8 点云/密度、多图层/遮罩合成、实时 Master Effects、G0007 Workflow 双角色、G0010 数学透镜、G0011 静态本地闭环、G0012 批量 Workflow Provider 与 G0013 跨插件编排及会话恢复
 > 本文范围：定义产品形态、能力边界、跨插件关系，以及以 `Gxxxx` 编号推进的实施顺序
 
 > 实施档案：每个阶段的当下计划、实施方案、结果与未完成的人工验收独立归档在
@@ -24,7 +24,7 @@
 
 ### 2.1 Fractal Art 当前形态
 
-截至 2026-09-05，项目已经完成 G0001–G0012：
+截至 2026-09-05，项目已实施 G0001–G0013：
 
 - `FractalArtPlugin.Plugin` 是唯一真实插件程序集和正式交付物；
 - `FractalArtPlugin.Standalone` 通过独立 Scope 承载同一套真实 View、Document 和业务服务；
@@ -54,7 +54,8 @@
 - G0010 已实现 Julia/Mandelbrot 单点轨迹、递归树/L-System 构造、吸引子点云形成及 Document 内播放 Overlay；
 - G0011 已实现四态工作区、会话态高分辨率/透明 PNG、缺失能力显式修复、色彩/Alpha 一致性和固定迁移夹具；
 - G0012 已实现 1–16 项配方批量渲染、全批预检、run Artifact 与失败/取消回滚；Studio ForEach 复用旧 Release；
-- 当前本地 Debug 自动化共 248 项测试通过；G0003 输出指纹基准和五类既有生成器 RGBA 指纹保持稳定；
+- Fractal 原有 248 项回归继续通过；G0013 新增独立跨插件集成工程与两侧专项测试，三仓证据见阶段结果；
+- G0013 已实现 Studio 内置定义、部分成功保留、当前会话续跑、重新生成与显式清理；ImageLab 新增目录输出 Action；
 - 当前仍没有 Tool、Workbench Command、默认快捷键或实时 ImageLab 预览。
 
 阶段实施事实、自动化证据和待人工验收见 [`docs/refactoring`](refactoring/README.md)。
@@ -984,6 +985,12 @@ Workflow Studio 可以把“渲染分形作品”作为工作流步骤，与其�
 
 ### G0013：ImageLab Workflow 编排
 
+> 当前状态（2026-09-05）：本地实施完成；三仓 Debug、1142 项测试、格式、指纹和 Standalone 烟雾通过。门禁证据和真实 Host 待验收项见
+> [计划](refactoring/G0013/plan.md)、[编排与恢复设计](refactoring/G0013/workflow-orchestration-design.md)、
+> [实施说明](refactoring/G0013/implementation.md)和[实施结果](refactoring/G0013/result.md)。
+> 首版采用 1–16 个已保存配方，保留成功输出并手动续跑；不增加 Seed 覆盖、跨重启恢复或 Host 原生 Artifact。
+> 本轮不使用 AIFLOW，不增加 Windows CI，不执行发布、正式 ZIP、安装或部署门禁。
+
 **目标**
 
 在 G0007 三步流程基础上补齐批量定义、真实 Host 产品化示例和故障恢复体验。
@@ -998,7 +1005,7 @@ Workflow Studio 可以把“渲染分形作品”作为工作流步骤，与其�
 
 **阶段形态**
 
-高级用户可以批量渲染多个作品或 Seed，并调用 ImageLab 的粗粒度能力进行后处理；普通创作者仍然只需使用 Fractal Document。
+高级用户可以选择 1–16 个已保存配方，使用各配方自身的 Seed 批量渲染并调用 ImageLab 后处理；首版不提供 Seed 覆盖。普通创作者仍然只需使用 Fractal Document。
 
 **完成标准**
 
@@ -1037,7 +1044,7 @@ Workflow Studio 可以把“渲染分形作品”作为工作流步骤，与其�
 
 ## 10. 推荐的实际开工顺序
 
-当前进度（2026-09-05）：`G0001 ✓ → G0002 ✓ → G0003 ✓ → G0004 ✓ → G0005 ✓ → G0005.1 ✓ → G0006 ✓ → G0007 ✓ → G0008 ✓ → G0009 ✓ → G0010 ✓ → G0011 ✓ → G0012 ✓`。其中勾选表示代码与本地自动化门禁完成，
+当前进度（2026-09-05）：`G0001 ✓ → G0002 ✓ → G0003 ✓ → G0004 ✓ → G0005 ✓ → G0005.1 ✓ → G0006 ✓ → G0007 ✓ → G0008 ✓ → G0009 ✓ → G0010 ✓ → G0011 ✓ → G0012 ✓ → G0013 ✓`。其中勾选表示代码与本地自动化门禁完成，
 不代表真实 Host、正式 ZIP 或全部人工验收已经封板。
 
 严格按以下顺序推进：

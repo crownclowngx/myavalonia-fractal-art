@@ -1,6 +1,6 @@
 # FractalArtPlugin
 
-这是 `myavalonia.plugin.fractal.art` 的 Managed Plugin 解决方案。当前已完成 G0001–G0012 的代码实施：
+这是 `myavalonia.plugin.fractal.art` 的 Managed Plugin 解决方案。当前已完成 G0001–G0013 的代码实施：
 产品化插件壳、可持久化空作品闭环，以及 Julia → 标量场 → 线性渐变 → 预览/PNG 导出的首条纵向切片。
 画布支持鼠标拖动平移和以指针为锚点的滚轮缩放；Julia 配方使用高精度十进制文本持久化，并在深缩放时
 自动切换到 32–1024 位可配置的任意精度定点内核。
@@ -22,6 +22,9 @@ G0011 封板静态作品本地闭环：四态工作区与新手引导、缺失�
 sRGB/Alpha 一致性、统一缩略图上下文和 v1–v8 固定迁移夹具；正式 ZIP 与真实 Host 验收留到发布阶段。
 G0012 增加受预算约束的 1–16 项 Workflow 批量作品渲染、全批预检与失败/取消回滚；沿用 File Artifact v1
 和既有 Release，Studio 通过 ForEach 消费结果。本地 248 项测试通过；[专用设计与结果](docs/refactoring/G0012/result.md)明确列出待发布阶段的 Host 联调。
+G0013 增加 Studio 内置单张/批量 ImageLab 编排、会话续跑与显式清理，并补齐 ImageLab 目录输出和文件边界。
+见 [完整设计](docs/refactoring/G0013/workflow-orchestration-design.md)和[本地门禁结果](docs/refactoring/G0013/result.md)。
+可运行 `./tools/verify-g0013.ps1` 复验三个仓库的 Debug 门禁；本阶段不执行 Windows CI 或发布/ZIP 门禁。
 真实交付物是 `src/FractalArtPlugin.Plugin`；`Standalone` 只负责快速预览同一份 View、Document 与业务服务。
 
 > 第一次开始开发前，请先阅读 [项目文档与快速开始](docs/README.md)。其中说明了三个子项目和
@@ -45,5 +48,5 @@ dotnet msbuild src/FractalArtPlugin.Plugin/FractalArtPlugin.Plugin.csproj `
 Standalone 只能验证界面和插件自身对象图；manifest、加载上下文、Document Scope、Dock、Tool 和
 生命周期必须使用真实 Host 做最终验收。
 
-首版保持零 Tool、零 Workbench Command、零默认快捷键。G0001–G0012 的计划、实施方案、结果与门禁证据见
+首版保持零 Tool、零 Workbench Command、零默认快捷键。G0001–G0013 的计划、实施方案、结果与门禁证据见
 [重构实施档案](docs/refactoring/README.md)。

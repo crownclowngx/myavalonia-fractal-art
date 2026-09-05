@@ -42,7 +42,7 @@ Standalone 适合快速检查 AXAML、编译绑定、命令和插件自身对象
 3. [临时部署、正式发布与验收](deployment-and-release.md)
 4. [Workflow Action Provider 与 Consumer 接入](workflow-actions.md)
 5. [Workbench Command 开发说明](workbench-commands.md)
-6. [G0001–G0012 重构实施档案](refactoring/README.md)
+6. [G0001–G0013 重构实施档案](refactoring/README.md)
 7. [G0005.1 双生成器入口与可编辑 L-System 计划](refactoring/G0005.1/plan.md)
 8. [G0003 高精度性能与领域模块化专项档案](refactoring/G0003/precision-performance/result.md)
 9. [G0006 创作图与缓存设计](refactoring/G0006/graph-cache-design.md)
@@ -53,6 +53,8 @@ Standalone 适合快速检查 AXAML、编译绑定、命令和插件自身对象
 14. [G0011 静态作品闭环设计](refactoring/G0011/static-artwork-closure-design.md)
 15. [G0012 批量 Workflow Provider 设计与 Studio 示例](refactoring/G0012/workflow-provider-design.md)
 16. [G0012 本地门禁结果及待发布验收](refactoring/G0012/result.md)
+17. [G0013 ImageLab 编排与恢复设计](refactoring/G0013/workflow-orchestration-design.md)
+18. [G0013 三仓本地门禁与实施结果](refactoring/G0013/result.md)
 
 ## 开发前记住
 
