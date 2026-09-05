@@ -60,7 +60,8 @@ internal interface IFractalWorkflowArtifactStore
         ArtworkDefinition artwork,
         Guid operationId,
         string lifetime,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        WorkflowArtifactOrigin? origin = null);
 
     Task<ArtifactReleaseResult> ReleaseAsync(
         WorkflowFileArtifact artifact,

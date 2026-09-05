@@ -1,9 +1,17 @@
 # Workflow Action Provider 与 Consumer 接入
 
-当前模板精确引用 Plugin SDK `3.3.0`；其中的 Workflow Action 契约保持兼容。独立的 Workflow SDK `1.0.0`
-提供 Schema、引用路径、
-保守可赋值与 Catalog revision。通用模板仍只生成一个普通 Document，不会替开发者选择
-Provider 或 Consumer 角色。这样创建出来的插件保持最小职责，也不会因为示例代码意外取得跨插件调用能力。
+当前 Fractal 插件精确引用 Plugin SDK `3.3.0`；Workflow SDK `1.0.0` 为测试提供 Schema、引用路径、
+保守可赋值校验。Fractal 明确登记 Provider + Consumer 双角色，普通创作不依赖 Studio。
+
+| 当前 Provider Action | 输入/输出 | 确认策略 |
+| --- | --- | --- |
+| `myavalonia.plugin.fractal.art.workflow.render-artwork-file` | 单配方路径 → run PNG Artifact/image | OncePerRun |
+| `myavalonia.plugin.fractal.art.workflow.release-artifact` | 自有 run Artifact → released/可选 warningCode | EveryInvocation |
+| `myavalonia.plugin.fractal.art.workflow.export-artwork-batch` | 1–16 项配方 → 有序 results | OncePerRun |
+
+批量契约、预算、回滚及可组合的 Studio ForEach 示例见 [G0012 专用设计](refactoring/G0012/workflow-provider-design.md)，
+本地门禁与真实 Host 待验收项见 [实施结果](refactoring/G0012/result.md)。File Artifact v1 是文件协议，
+当前 SDK 没有供本插件使用的 Host 原生 Artifact 服务。新增 Action 会改变目录 revision，Studio 定义须刷新验证。
 
 ## 角色和所有权
 
@@ -11,8 +19,9 @@ Provider 或 Consumer 角色。这样创建出来的插件保持最小职责，�
   Provider 中创建和释放独立 Scope。
 - **Consumer** 只调用 `UseWorkflowActionGateway()` 请求 caller-bound Gateway。CallerId、RunId、
   InvocationId 和授权结果全部由 Host 生成，插件不能提交或伪造。
-- 首版明确禁止同一插件同时成为 Provider 和 Consumer，避免递归调用和不清晰的授权所有权。需要端到端
-  验证时应创建两个独立插件项目，并通过真实 ZIP 与候选 Host 组合。
+- 当前 Host 允许同一插件成为 Provider 和 Consumer，并过滤自有 Action、拒绝自调用与 Handler 嵌套调用。
+  Fractal Handler 不注入 Gateway；只有 Document 顶层协调器调用 ImageLab。端到端联调使用独立 Consumer
+  或 Studio，并在发布阶段通过真实 ZIP 与候选 Host 验收。
 
 ## Provider 最小示例
 

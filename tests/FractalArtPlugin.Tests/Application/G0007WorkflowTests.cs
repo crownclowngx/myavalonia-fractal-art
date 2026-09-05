@@ -189,7 +189,8 @@ public sealed class G0007WorkflowTests
         public bool AllowTransientOnRelease { get; private set; }
 
         public Task<WorkflowFileArtifact> CreateAsync(
-            ArtworkDefinition artwork, Guid operationId, string lifetime, CancellationToken cancellationToken)
+            ArtworkDefinition artwork, Guid operationId, string lifetime, CancellationToken cancellationToken,
+            WorkflowArtifactOrigin? origin = null)
         {
             CreateCount++;
             return Task.FromResult(CreateSourceArtifact() with

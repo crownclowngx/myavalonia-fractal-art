@@ -6,6 +6,7 @@ using FractalArtPlugin.Constants;
 using FractalArtPlugin.Features.Artwork;
 using FractalArtPlugin.Infrastructure.Workflow;
 using FractalArtPlugin.Plugin;
+using FractalArtPlugin.Application.Workflow;
 using Xunit;
 
 namespace FractalArtPlugin.Tests;
@@ -31,7 +32,7 @@ public sealed class PluginCompositionTests
         Assert.Empty(registration.KeyBindings);
         Assert.True(registration.WorkflowGatewayRequested);
         Assert.Equal(typeof(FractalArtifactCleanupLifecycle), registration.Lifecycle);
-        Assert.Equal(2, registration.WorkflowActions.Count);
+        Assert.Equal(3, registration.WorkflowActions.Count);
     }
 
     [Fact]
@@ -70,6 +71,37 @@ public sealed class PluginCompositionTests
         Assert.NotSame(firstCache, secondCache);
         Assert.NotSame(firstPipeline, secondPipeline);
         Assert.NotSame(firstLens, secondLens);
+    }
+
+    [Fact]
+    public void G0012动作Scope独立且释放Scope会释放渲染缓存()
+    {
+        var registration = new CapturingRegistration();
+        new FractalArtPluginModule().Configure(registration);
+        registration.Services.AddSingleton<IPluginWindowInteraction, NullWindowInteraction>();
+        registration.Services.AddSingleton<IWorkflowActionGateway, UnavailableGateway>();
+        registration.Services.AddScoped<IDocumentLifetime, TestLifetime>();
+        using var provider = registration.Services.BuildServiceProvider(new ServiceProviderOptions
+        {
+            ValidateOnBuild = true,
+            ValidateScopes = true
+        });
+        var first = provider.CreateScope();
+        using var second = provider.CreateScope();
+        try
+        {
+            foreach (var action in registration.WorkflowActions)
+                Assert.NotSame(first.ServiceProvider.GetRequiredService(action.Handler), second.ServiceProvider.GetRequiredService(action.Handler));
+            Assert.NotSame(first.ServiceProvider.GetRequiredService<IWorkflowBatchExporter>(), second.ServiceProvider.GetRequiredService<IWorkflowBatchExporter>());
+            Assert.NotSame(first.ServiceProvider.GetRequiredService<IFractalWorkflowArtifactStore>(), second.ServiceProvider.GetRequiredService<IFractalWorkflowArtifactStore>());
+            var cache = first.ServiceProvider.GetRequiredService<IArtworkGraphCache>();
+            var other = second.ServiceProvider.GetRequiredService<IArtworkGraphCache>();
+            Assert.NotSame(cache, other);
+            first.Dispose();
+            Assert.Throws<ObjectDisposedException>(() => cache.TryGet(new("disposed"), out _));
+            Assert.False(other.TryGet(new("still-active"), out _));
+        }
+        finally { first.Dispose(); }
     }
 
     private sealed class CapturingRegistration : IPluginRegistration, IWorkflowActionRegistration, IWorkbenchCommandRegistration

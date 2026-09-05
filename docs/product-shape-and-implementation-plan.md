@@ -1,9 +1,9 @@
 # Fractal Art 插件形态、产品定位与闭环实施计划
 
-> 文档状态：产品与实施基线；G0001–G0011（含 G0003 高精度性能专项）已完成代码与本地自动化门禁，真实 Host 与其余人工验收待完成
+> 文档状态：产品与实施基线；G0001–G0012（含 G0003 高精度性能专项）已完成代码与本地自动化门禁，真实 Host 与其余人工验收待完成
 > 插件持久身份：`myavalonia.plugin.fractal.art`  
 > 产品显示名：Fractal Art / 分形画室  
-> 当前工程状态：已完成产品化模板、五类生成器、v8 点云/密度、多图层/遮罩合成、实时 Master Effects、G0007 Workflow 双角色、G0010 数学透镜与 G0011 静态本地闭环
+> 当前工程状态：已完成产品化模板、五类生成器、v8 点云/密度、多图层/遮罩合成、实时 Master Effects、G0007 Workflow 双角色、G0010 数学透镜、G0011 静态本地闭环与 G0012 批量 Workflow Provider
 > 本文范围：定义产品形态、能力边界、跨插件关系，以及以 `Gxxxx` 编号推进的实施顺序
 
 > 实施档案：每个阶段的当下计划、实施方案、结果与未完成的人工验收独立归档在
@@ -24,7 +24,7 @@
 
 ### 2.1 Fractal Art 当前形态
 
-截至 2026-09-05，项目已经完成 G0001–G0011：
+截至 2026-09-05，项目已经完成 G0001–G0012：
 
 - `FractalArtPlugin.Plugin` 是唯一真实插件程序集和正式交付物；
 - `FractalArtPlugin.Standalone` 通过独立 Scope 承载同一套真实 View、Document 和业务服务；
@@ -53,7 +53,8 @@
 - G0009 已实现 Clifford/De Jong、不可变 PointCloud、确定性整数密度、透明渐变、图层局部发光与密度遮罩；
 - G0010 已实现 Julia/Mandelbrot 单点轨迹、递归树/L-System 构造、吸引子点云形成及 Document 内播放 Overlay；
 - G0011 已实现四态工作区、会话态高分辨率/透明 PNG、缺失能力显式修复、色彩/Alpha 一致性和固定迁移夹具；
-- 当前本地 Debug 自动化共 191 项测试通过；G0003 输出指纹基准和五类既有生成器 RGBA 指纹保持稳定；
+- G0012 已实现 1–16 项配方批量渲染、全批预检、run Artifact 与失败/取消回滚；Studio ForEach 复用旧 Release；
+- 当前本地 Debug 自动化共 248 项测试通过；G0003 输出指纹基准和五类既有生成器 RGBA 指纹保持稳定；
 - 当前仍没有 Tool、Workbench Command、默认快捷键或实时 ImageLab 预览。
 
 阶段实施事实、自动化证据和待人工验收见 [`docs/refactoring`](refactoring/README.md)。
@@ -949,6 +950,11 @@ Document Scope 会话态，不进入 v8 快照、Dirty、撤销或导出；它�
 
 ### G0012：Workflow Action Provider
 
+> 当前状态（2026-09-05）：代码、248 项本地 Debug 自动化、性能基准、Standalone 烟雾和专用文档完成。
+> 本轮沿用 File Artifact v1，不扩展 Host/SDK 原生 Artifact；真实 ZIP、候选 Host 和跨插件联调留到发布阶段。
+> 详见[计划](refactoring/G0012/plan.md)、[Provider 设计与 Studio 示例](refactoring/G0012/workflow-provider-design.md)、
+> [实施方案](refactoring/G0012/implementation.md)和[实施结果](refactoring/G0012/result.md)。
+
 **目标**
 
 在 G0007 首个 Render/Release Action 基础上扩展批量渲染能力，而不把实时创作管线变成跨插件 JSON 像素流。
@@ -957,11 +963,11 @@ Document Scope 会话态，不进入 v8 快照、Dirty、撤销或导出；它�
 
 - 复核并演进 G0007 已登记的 Provider；
 - 在保持兼容的前提下扩展稳定、受限、可审计的 Action Schema；
-- 增加 `render-variations` 或批量 `export-artwork`；
-- 输入使用作品定义或受治理资源引用；
-- 输出使用结果元数据和正式 Artifact 身份；
+- 已选择实现 `export-artwork-batch`，本轮不增加自动变体；
+- 输入使用现有版本化作品配方的绝对路径，由 Host Action 读取风险与确认治理；
+- 输出使用有序结果元数据和 File Artifact v1 身份，不宣称 Host 原生 Artifact 句柄；
 - 声明风险、确认策略、预算、进度和取消语义；
-- 使用独立 Consumer 插件或 Workflow Studio 完成真实 Host 联调。
+- 发布阶段使用独立 Consumer 插件或 Workflow Studio 完成真实 Host 联调。
 
 **阶段形态**
 
@@ -974,7 +980,7 @@ Workflow Studio 可以把“渲染分形作品”作为工作流步骤，与其�
 - 不在 JSON 中传递大型原始像素；
 - Action 调用取消后不留下错误的成功产物；
 - Provider Scope 被正确创建和释放；
-- 跨插件验收使用真实 ZIP 和候选 Host。
+- 跨插件验收在发布阶段使用真实 ZIP 和候选 Host，本地测试不替代该验收。
 
 ### G0013：ImageLab Workflow 编排
 
@@ -1031,7 +1037,7 @@ Workflow Studio 可以把“渲染分形作品”作为工作流步骤，与其�
 
 ## 10. 推荐的实际开工顺序
 
-当前进度（2026-09-05）：`G0001 ✓ → G0002 ✓ → G0003 ✓ → G0004 ✓ → G0005 ✓ → G0005.1 ✓ → G0006 ✓ → G0007 ✓ → G0008 ✓ → G0009 ✓ → G0010 ✓ → G0011 ✓`。其中勾选表示代码与本地自动化门禁完成，
+当前进度（2026-09-05）：`G0001 ✓ → G0002 ✓ → G0003 ✓ → G0004 ✓ → G0005 ✓ → G0005.1 ✓ → G0006 ✓ → G0007 ✓ → G0008 ✓ → G0009 ✓ → G0010 ✓ → G0011 ✓ → G0012 ✓`。其中勾选表示代码与本地自动化门禁完成，
 不代表真实 Host、正式 ZIP 或全部人工验收已经封板。
 
 严格按以下顺序推进：

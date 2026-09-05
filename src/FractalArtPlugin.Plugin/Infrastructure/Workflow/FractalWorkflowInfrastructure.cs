@@ -66,7 +66,7 @@ internal sealed class WorkflowRecipeCodec(IArtworkSnapshotCodec artworkCodec) : 
 
 internal sealed class WorkflowRecipeFiles(
     IWorkflowRecipeCodec codec,
-    IAtomicFileWriter writer) : IWorkflowRecipeFiles
+    IAtomicFileWriter writer) : IWorkflowRecipeFiles, IWorkflowBoundedRecipeReader
 {
     internal const int MaximumBytes = 4 * 1024 * 1024;
 
@@ -85,16 +85,49 @@ internal sealed class WorkflowRecipeFiles(
     }
 
     public async Task<ArtworkDefinition> ReadAsync(string path, CancellationToken cancellationToken)
+        => (await ReadBoundedAsync(path, MaximumBytes, cancellationToken).ConfigureAwait(false)).Artwork;
+
+    /// <summary>
+    /// 通过有界流实际计数，不能只在读取前查询 Length 后调用 ReadAllBytesAsync：文件可能在读取时增长。
+    /// 最多多读一个用于确认越界的字节，所有计入批预算的数据与解码快照来自同一次读取。
+    /// </summary>
+    public async Task<WorkflowRecipeReadResult> ReadBoundedAsync(string path, int maximumBytes, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        if (maximumBytes <= 0) throw new InvalidDataException("批次配方读取预算已耗尽。");
+        maximumBytes = Math.Min(maximumBytes, MaximumBytes);
         var fullPath = Path.GetFullPath(path);
         var information = new FileInfo(fullPath);
-        if (!information.Exists || information.Length is <= 0 or > MaximumBytes)
+        if (!information.Exists || information.Length <= 0 || information.Length > maximumBytes)
         {
             throw new InvalidDataException("Workflow 配方不存在、为空或超过 4 MiB 上限。");
         }
-        var bytes = await File.ReadAllBytesAsync(fullPath, cancellationToken).ConfigureAwait(false);
-        return codec.Decode(bytes);
+        await using var stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read,
+            64 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        var bytes = await ReadContentAsync(stream, maximumBytes, cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        var artwork = codec.Decode(bytes);
+        cancellationToken.ThrowIfCancellationRequested();
+        return new(artwork, bytes.Length);
+    }
+
+    /// <summary>读取循环独立于文件长度提示；也便于用增长流验证读取过程中越界和取消的真实行为。</summary>
+    internal static async Task<byte[]> ReadContentAsync(Stream stream, int maximumBytes, CancellationToken cancellationToken)
+    {
+        if (maximumBytes is <= 0 or > MaximumBytes) throw new InvalidDataException("配方读取预算无效。");
+        using var content = new MemoryStream();
+        var buffer = new byte[64 * 1024];
+        while (true)
+        {
+            var read = await stream.ReadAsync(buffer.AsMemory(0,
+                (int)Math.Min(buffer.Length, maximumBytes - content.Length + 1)), cancellationToken).ConfigureAwait(false);
+            if (read == 0) break;
+            if (content.Length + read > maximumBytes) throw new InvalidDataException("Workflow 配方超过实际读取预算。");
+            content.Write(buffer, 0, read);
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+        return content.ToArray();
     }
 }
 
@@ -115,9 +148,11 @@ internal sealed class FractalWorkflowArtifactStore(
         ArtworkDefinition artwork,
         Guid operationId,
         string lifetime,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        WorkflowArtifactOrigin? origin = null)
     {
         ArgumentNullException.ThrowIfNull(artwork);
+        cancellationToken.ThrowIfCancellationRequested();
         if (operationId == Guid.Empty ||
             lifetime is not (FractalWorkflowFileArtifactContract.TransientLifetime or
                 FractalWorkflowFileArtifactContract.RunLifetime))
@@ -127,10 +162,13 @@ internal sealed class FractalWorkflowArtifactStore(
         await CleanupExpiredAsync(cancellationToken).ConfigureAwait(false);
         var operationRoot = OperationRoot(operationId);
         EnsureArtifactRoots(create: true);
+        // 不覆盖已有操作目录，避免重复身份覆盖旧文件或失败回滚误删旧产物。
+        if (Directory.Exists(operationRoot)) throw new InvalidDataException("Artifact 操作目录已存在。");
         Directory.CreateDirectory(operationRoot);
         RejectReparsePoint(operationRoot);
         var markerPath = Path.Combine(operationRoot, ".owner.json");
         var sourcePath = Path.Combine(operationRoot, "source.png");
+        var ownsMarker = false;
         try
         {
             var marker = new OwnerMarker(
@@ -138,18 +176,28 @@ internal sealed class FractalWorkflowArtifactStore(
                 FractalWorkflowFileArtifactContract.Version,
                 FractalWorkflowFileArtifactContract.PluginId,
                 operationId,
-                DateTimeOffset.UtcNow);
+                DateTimeOffset.UtcNow, origin?.InvocationId, origin?.ItemId);
             var markerBytes = JsonSerializer.SerializeToUtf8Bytes(marker, MarkerOptions);
-            await File.WriteAllBytesAsync(markerPath, markerBytes, cancellationToken).ConfigureAwait(false);
+            // 小型 marker 先完整落盘再观察取消；否则半截 marker 会让恢复清理失去所有权依据。
+            await using (var markerStream = new FileStream(markerPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                ownsMarker = true;
+                await markerStream.WriteAsync(markerBytes, CancellationToken.None).ConfigureAwait(false);
+            }
+            cancellationToken.ThrowIfCancellationRequested();
             var plan = exportPlanner.Create(
                 artwork,
                 new ArtworkExportRequest(artwork.Canvas.Width, artwork.Canvas.Height, false));
             await exporter.ExportAsync(plan, sourcePath, cancellationToken).ConfigureAwait(false);
             var information = new FileInfo(sourcePath);
+            RejectReparsePoint(sourcePath);
+            if (information.Length is <= 0 or > 268_435_456)
+                throw new InvalidDataException("PNG Artifact 文件长度超出协议预算。");
             await using var stream = new FileStream(
                 sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read,
                 64 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
             var hash = await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
             return new WorkflowFileArtifact(
                 FractalWorkflowFileArtifactContract.Name,
                 FractalWorkflowFileArtifactContract.Version,
@@ -163,7 +211,13 @@ internal sealed class FractalWorkflowArtifactStore(
         }
         catch
         {
-            TryDeleteOwnedDirectory(operationRoot);
+            // CreateNew 失败时目录可能属于同身份的并发创建者，当前调用绝不能清理对方文件。
+            try { if (ownsMarker) TryDeleteOwnedDirectory(operationRoot); }
+            catch (Exception)
+            {
+                // 回收失败保留有效 marker；不能用清理异常覆盖渲染或取消的原始原因。
+                System.Diagnostics.Trace.TraceWarning("Fractal Artifact {0} 创建失败后的清理延迟。", operationId);
+            }
             throw;
         }
     }
@@ -280,6 +334,7 @@ internal sealed class FractalWorkflowArtifactStore(
     private static OwnerMarker ReadMarker(string operationRoot)
     {
         var markerPath = Path.Combine(operationRoot, ".owner.json");
+        RejectReparsePoint(markerPath);
         var information = new FileInfo(markerPath);
         if (!information.Exists || information.Length is <= 0 or > 4096)
         {
@@ -291,7 +346,13 @@ internal sealed class FractalWorkflowArtifactStore(
 
     private static bool TryDeleteOwnedDirectory(string operationRoot)
     {
+        EnsureArtifactRoots(create: false);
+        var operationId = Guid.ParseExact(Path.GetFileName(operationRoot), "D");
+        if (!string.Equals(OperationRoot(operationId), Path.GetFullPath(operationRoot), PathComparison))
+            throw new InvalidDataException("清理目录与 Artifact 所有权根不匹配。");
         RejectReparsePoint(operationRoot);
+        ValidateMarker(operationRoot, operationId);
+        if (Directory.EnumerateDirectories(operationRoot).Any()) return false;
         foreach (var file in Directory.EnumerateFiles(operationRoot))
         {
             var name = Path.GetFileName(file);
@@ -303,10 +364,12 @@ internal sealed class FractalWorkflowArtifactStore(
             }
             RejectReparsePoint(file);
         }
-        foreach (var file in Directory.EnumerateFiles(operationRoot))
+        // 最后删除 marker。若 PNG 被占用，下一次 TTL 仍能识别并回收该目录。
+        foreach (var file in Directory.EnumerateFiles(operationRoot).Where(file => Path.GetFileName(file) != ".owner.json"))
         {
             File.Delete(file);
         }
+        File.Delete(Path.Combine(operationRoot, ".owner.json"));
         Directory.Delete(operationRoot, recursive: false);
         return true;
     }
@@ -327,6 +390,9 @@ internal sealed class FractalWorkflowArtifactStore(
     {
         var artifactRoot = Path.GetFullPath(FractalWorkflowFileArtifactContract.RootPath);
         var pluginRoot = PluginRoot();
+        // 先检查所有已存在父目录，再创建根；只检查最终目录无法阻止祖先 junction 重定向写入。
+        for (var ancestor = new DirectoryInfo(pluginRoot); ancestor is not null; ancestor = ancestor.Parent)
+            if (ancestor.Exists) RejectReparsePoint(ancestor.FullName);
         if (create)
         {
             Directory.CreateDirectory(artifactRoot);
@@ -355,7 +421,9 @@ internal sealed class FractalWorkflowArtifactStore(
         int Version,
         string ProducerPluginId,
         Guid ProducerOperationId,
-        DateTimeOffset CreatedAtUtc);
+        DateTimeOffset CreatedAtUtc,
+        Guid? InvocationId = null,
+        string? ItemId = null);
 }
 
 internal sealed class ImageLabActionClient(IWorkflowActionGateway gateway) : IImageLabActionClient

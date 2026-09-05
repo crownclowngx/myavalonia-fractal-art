@@ -131,6 +131,7 @@ internal sealed class RenderArtworkFileWorkflowActionHandler(
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
+        cancellationToken.ThrowIfCancellationRequested();
         var input = arguments.Deserialize<RenderArguments>() ??
                     throw new ArgumentException("Fractal Render 参数无法解析。", nameof(arguments));
         context.Progress.Report(new WorkflowActionProgress("validating", 5, "正在验证 Fractal 配方。"));
@@ -146,12 +147,24 @@ internal sealed class RenderArtworkFileWorkflowActionHandler(
             context.InvocationId,
             FractalWorkflowFileArtifactContract.RunLifetime,
             cancellationToken).ConfigureAwait(false);
-        context.Progress.Report(new WorkflowActionProgress("succeeded", 100, "Fractal PNG Artifact 已提交。"));
-        return JsonSerializer.SerializeToElement(new
+        try
         {
-            artifact = ArtifactJson.ToObject(artifact),
-            image = new { width = artwork.Canvas.Width, height = artwork.Canvas.Height },
-        });
+            var output = JsonSerializer.SerializeToElement(new
+            {
+                artifact = ArtifactJson.ToObject(artifact),
+                image = new { width = artwork.Canvas.Width, height = artwork.Canvas.Height },
+            });
+            cancellationToken.ThrowIfCancellationRequested();
+            context.Progress.Report(new WorkflowActionProgress("succeeded", 100, "Fractal PNG Artifact 已提交。"));
+            cancellationToken.ThrowIfCancellationRequested();
+            return output;
+        }
+        catch
+        {
+            // 创建结束不等于调用提交；迟到取消和序列化失败仍由 Provider 回收当前产物。
+            await WorkflowBatchArtifacts.RollbackAsync(artifactStore, artifact).ConfigureAwait(false);
+            throw;
+        }
     }
 
     private sealed record RenderArguments(
