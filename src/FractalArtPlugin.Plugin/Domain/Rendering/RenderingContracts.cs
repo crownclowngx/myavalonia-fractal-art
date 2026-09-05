@@ -34,6 +34,7 @@ public interface ILSystemValidator
 public interface ILSystemExpander
 {
     string Expand(LSystemDefinition definition, CancellationToken cancellationToken);
+    IReadOnlyList<string> ExpandGenerations(LSystemDefinition definition, CancellationToken cancellationToken);
 }
 
 public interface ITurtlePathInterpreter

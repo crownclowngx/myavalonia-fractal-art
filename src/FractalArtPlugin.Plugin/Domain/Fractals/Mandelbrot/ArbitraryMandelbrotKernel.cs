@@ -80,31 +80,14 @@ internal sealed class ArbitraryMandelbrotKernel : IMandelbrotKernel
         bool[] escaped,
         int index)
     {
-        var real = BigInteger.Zero;
-        var imaginary = BigInteger.Zero;
-        var magnitudeSquared = BigInteger.Zero;
-        var iteration = 0;
-        while (iteration < maximumIterations)
-        {
-            if (iteration % cancellationCheckInterval == 0)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-            }
-
-            var realSquared = fixedPoint.Multiply(real, real);
-            var imaginarySquared = fixedPoint.Multiply(imaginary, imaginary);
-            magnitudeSquared = realSquared + imaginarySquared;
-            if (magnitudeSquared > fixedPoint.Four)
-            {
-                break;
-            }
-
-            var nextReal = realSquared - imaginarySquared + constantReal;
-            imaginary = (fixedPoint.Multiply(real, imaginary) << 1) + constantImaginary;
-            real = nextReal;
-            iteration++;
-        }
-
-        JuliaScalar.Write(values, escaped, index, iteration, maximumIterations, fixedPoint.ToDouble(magnitudeSquared));
+        EscapeOrbitMath.ComputeFixed(
+            fixedPoint,
+            BigInteger.Zero,
+            BigInteger.Zero,
+            constantReal,
+            constantImaginary,
+            maximumIterations,
+            cancellationCheckInterval,
+            cancellationToken).Write(values, escaped, index, maximumIterations);
     }
 }

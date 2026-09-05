@@ -34,7 +34,7 @@ internal sealed class DeJongAttractorKernel : IAttractorFormulaKernel
 /// </summary>
 internal sealed class StrangeAttractorPointGenerator : IAttractorPointCloudGenerator
 {
-    private const int LogicalOrbitCount = 32;
+    internal const int LogicalOrbitCount = 32;
     private readonly IReadOnlyDictionary<AttractorFormula, IAttractorFormulaKernel> _kernels;
 
     public StrangeAttractorPointGenerator(IEnumerable<IAttractorFormulaKernel> kernels)
@@ -75,19 +75,11 @@ internal sealed class StrangeAttractorPointGenerator : IAttractorPointCloudGener
         {
             var start = sampleCount * orbit / orbitCount;
             var end = sampleCount * (orbit + 1) / orbitCount;
-            var state = Mix(unchecked((ulong)seed) ^ ((ulong)definition.Formula << 56) ^ (ulong)orbit);
-            var x = ToSignedUnit(Mix(state));
-            var y = ToSignedUnit(Mix(state ^ 0x9E3779B97F4A7C15UL));
+            var initial = CreateInitialState(seed, definition.Formula, orbit);
+            var x = initial.X;
+            var y = initial.Y;
 
-            for (var iteration = 0; iteration < definition.BurnInIterations; iteration++)
-            {
-                if ((iteration & 255) == 0)
-                {
-                    token.ThrowIfCancellationRequested();
-                }
-
-                (x, y) = kernel.Step(definition, x, y);
-            }
+            (x, y) = AdvanceBurnIn(definition, kernel, x, y, token);
 
             for (var index = start; index < end; index++)
             {
@@ -110,6 +102,53 @@ internal sealed class StrangeAttractorPointGenerator : IAttractorPointCloudGener
 
         cancellationToken.ThrowIfCancellationRequested();
         return PointCloud.FromOwned(points);
+    }
+
+    /// <summary>
+    /// 为指定逻辑轨道派生稳定初值。生成器与数学透镜必须调用同一入口；否则透镜即使公式相同，展示的
+    /// “第 0 条轨道”也可能因另一套随机派生而与作品点云无关。
+    /// </summary>
+    internal static (double X, double Y) CreateInitialState(long seed, AttractorFormula formula, int orbit)
+    {
+        if (orbit is < 0 or >= LogicalOrbitCount)
+        {
+            throw new ArgumentOutOfRangeException(nameof(orbit));
+        }
+
+        var state = Mix(unchecked((ulong)seed) ^ ((ulong)formula << 56) ^ (ulong)orbit);
+        return (ToSignedUnit(Mix(state)), ToSignedUnit(Mix(state ^ 0x9E3779B97F4A7C15UL)));
+    }
+
+    /// <summary>
+    /// 执行生产点云使用的完整预热。可选轨迹收集器只由数学透镜传入；正常生成不会分配预热数组，二者
+    /// 却共享相同的取消间隔、公式步进和有限值检查。
+    /// </summary>
+    internal static (double X, double Y) AdvanceBurnIn(
+        StrangeAttractorDefinition definition,
+        IAttractorFormulaKernel kernel,
+        double x,
+        double y,
+        CancellationToken cancellationToken,
+        ICollection<(double X, double Y)>? trace = null)
+    {
+        trace?.Add((x, y));
+        for (var iteration = 0; iteration < definition.BurnInIterations; iteration++)
+        {
+            if ((iteration & 255) == 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
+            (x, y) = kernel.Step(definition, x, y);
+            if (!double.IsFinite(x) || !double.IsFinite(y))
+            {
+                throw new InvalidDataException("吸引子公式产生了非有限坐标。");
+            }
+
+            trace?.Add((x, y));
+        }
+
+        return (x, y);
     }
 
     private static ulong Mix(ulong value)

@@ -3,6 +3,7 @@ using FractalArtPlugin.Application;
 using FractalArtPlugin.Infrastructure;
 using FractalArtPlugin.Application.Workflow;
 using FractalArtPlugin.Infrastructure.Workflow;
+using FractalArtPlugin.Features.Artwork;
 
 namespace FractalArtPlugin.Plugin;
 
@@ -35,6 +36,14 @@ public static class FractalArtPluginServices
         services.AddSingleton<IPointDensityRenderer, PointDensityRenderer>();
         services.AddSingleton<IDensityGradientMapper, DensityGradientMapper>();
         services.AddSingleton<IDensityGlowRenderer, DensityGlowRenderer>();
+        services.AddSingleton<IMathLensProvider, EscapeTimeMathLensProvider>();
+        services.AddSingleton<IMathLensProvider, PathMathLensProvider>();
+        services.AddSingleton<IMathLensProvider, AttractorMathLensProvider>();
+        services.AddSingleton<IMathLensService, MathLensService>();
+        services.AddSingleton<IMathLensPlaybackClock, MathLensPlaybackClock>();
+        services.AddScoped(provider => new MathLensSession(
+            provider.GetRequiredService<IMathLensService>(),
+            provider.GetRequiredService<IMathLensPlaybackClock>()));
         services.AddSingleton<IScalarMaskConverter, ScalarMaskConverter>();
         services.AddSingleton<ILayerRasterTransformer, LayerRasterTransformer>();
         services.AddSingleton<ILayerCompositor, LayerCompositor>();

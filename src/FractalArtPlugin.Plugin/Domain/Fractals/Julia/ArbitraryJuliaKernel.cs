@@ -107,37 +107,16 @@ internal sealed class ArbitraryJuliaKernel : IJuliaKernel
         int cancellationCheckInterval,
         CancellationToken cancellationToken)
     {
-        var zr = real;
-        var zi = imaginary;
-        var iteration = 0;
-        var magnitudeSquared = BigInteger.Zero;
-        while (iteration < maximumIterations)
-        {
-            if (iteration % cancellationCheckInterval == 0)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-            }
-
-            var zrSquared = fixedPoint.Multiply(zr, zr);
-            var ziSquared = fixedPoint.Multiply(zi, zi);
-            magnitudeSquared = zrSquared + ziSquared;
-            if (magnitudeSquared > fixedPoint.Four)
-            {
-                break;
-            }
-
-            var nextReal = zrSquared - ziSquared + constantReal;
-            zi = (fixedPoint.Multiply(zr, zi) << 1) + constantImaginary;
-            zr = nextReal;
-            iteration++;
-        }
-
-        // 保护区随有效二进制位缩小，但不小于 2^-48；它只触发更高精度复核，
-        // 不直接改变逃逸分类，因此不会把诊断启发式变成作品语义。
-        var guardShift = Math.Min(fixedPoint.FractionalBits, 48);
-        var guard = BigInteger.One << Math.Max(0, fixedPoint.FractionalBits - guardShift);
-        var nearBoundary = BigInteger.Abs(magnitudeSquared - fixedPoint.Four) <= guard;
-        return new PixelSample(iteration, fixedPoint.ToDouble(magnitudeSquared), nearBoundary);
+        var sample = EscapeOrbitMath.ComputeFixed(
+            fixedPoint,
+            real,
+            imaginary,
+            constantReal,
+            constantImaginary,
+            maximumIterations,
+            cancellationCheckInterval,
+            cancellationToken);
+        return new PixelSample(sample.Iteration, sample.MagnitudeSquared, sample.NearEscapeBoundary);
     }
 
     internal readonly record struct PixelSample(int Iteration, double MagnitudeSquared, bool NearEscapeBoundary)

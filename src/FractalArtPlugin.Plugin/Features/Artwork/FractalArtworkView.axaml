@@ -6,14 +6,15 @@
     x:DataType="vm:FractalArtworkDocument">
   <Grid Background="#0A0E1C" RowDefinitions="Auto,*,Auto,Auto">
     <Border Grid.Row="0" Padding="14,10" Background="#12182B" BorderBrush="#27304A" BorderThickness="0,0,0,1">
-      <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto,Auto" ColumnSpacing="8">
+      <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto,Auto,Auto" ColumnSpacing="8">
         <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="20" FontWeight="SemiBold" Foreground="#F2F5FF" Text="分形作品" />
         <Button Grid.Column="1" Command="{Binding UndoCommand}" Content="撤销" IsEnabled="{Binding CanUndo}" />
         <Button Grid.Column="2" Command="{Binding RedoCommand}" Content="重做" IsEnabled="{Binding CanRedo}" />
         <Button Grid.Column="3" Command="{Binding GenerateVariationsCommand}" Content="生成九宫格" />
-        <CheckBox Grid.Column="5" VerticalAlignment="Center" Foreground="#D4DAED" Content="精细预览" IsChecked="{Binding HighQualityPreview}" />
-        <Button Grid.Column="6" Command="{Binding RefreshPreviewCommand}" Content="重新预览" />
-        <Button Grid.Column="7" Command="{Binding ExportPngCommand}" Content="导出 PNG" />
+        <Button Grid.Column="4" Command="{Binding ToggleMathLensCommand}" Content="数学透镜" />
+        <CheckBox Grid.Column="6" VerticalAlignment="Center" Foreground="#D4DAED" Content="精细预览" IsChecked="{Binding HighQualityPreview}" />
+        <Button Grid.Column="7" Command="{Binding RefreshPreviewCommand}" Content="重新预览" />
+        <Button Grid.Column="8" Command="{Binding ExportPngCommand}" Content="导出 PNG" />
       </Grid>
     </Border>
 
@@ -77,6 +78,7 @@
           PointerWheelChanged="HandlePointerWheelChanged">
         <Grid>
           <Image x:Name="PreviewImageControl" Margin="12" Source="{Binding PreviewImage}" Stretch="Uniform" />
+          <Canvas x:Name="MathLensOverlayCanvas" Margin="12" ClipToBounds="True" IsHitTestVisible="False" IsVisible="{Binding IsMathLensOpen}" />
           <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#77819D" FontSize="16"
                      IsVisible="{Binding IsPreviewEmpty}"
                      Text="正在生成可重复的分形预览…" />
@@ -358,7 +360,8 @@
     </Grid>
 
     <Border Grid.Row="2" MaxHeight="230" Padding="12,8" Background="#0E1425" BorderBrush="#27304A" BorderThickness="0,1,0,0">
-      <Grid RowDefinitions="Auto,Auto" RowSpacing="6">
+      <Grid>
+      <Grid RowDefinitions="Auto,Auto" RowSpacing="6" IsVisible="{Binding IsMathLensClosed}">
         <ScrollViewer Grid.Row="0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
           <ItemsControl ItemsSource="{Binding VariationCandidates}">
             <ItemsControl.ItemsPanel>
@@ -404,6 +407,29 @@
             </ItemsControl.ItemTemplate>
           </ItemsControl>
         </StackPanel>
+      </Grid>
+      <Grid RowDefinitions="Auto,Auto,*" RowSpacing="6" IsVisible="{Binding IsMathLensOpen}">
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+          <StackPanel Grid.Column="0" Spacing="2">
+            <TextBlock FontWeight="SemiBold" Foreground="#F2F5FF" Text="{Binding MathLens.Analysis.Title, FallbackValue='数学透镜'}" />
+            <TextBlock FontSize="11" Foreground="#9FB1D3" Text="{Binding MathLens.Analysis.Formula}" TextWrapping="Wrap" />
+          </StackPanel>
+          <Button Grid.Column="1" Command="{Binding ToggleMathLensCommand}" Content="关闭透镜" />
+        </Grid>
+        <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto" ColumnSpacing="6">
+          <Button Grid.Column="0" Command="{Binding PreviousMathLensFrameCommand}" Content="上一步" />
+          <Button Grid.Column="1" Command="{Binding PlayMathLensCommand}" Content="播放" />
+          <Button Grid.Column="2" Command="{Binding PauseMathLensCommand}" Content="暂停" />
+          <Button Grid.Column="3" Command="{Binding NextMathLensFrameCommand}" Content="下一步" />
+          <Slider Grid.Column="4" Minimum="0" Maximum="{Binding MathLens.FrameMaximum}" Value="{Binding MathLens.FrameIndex}" />
+          <TextBlock Grid.Column="5" VerticalAlignment="Center" Foreground="#D4DAED" Text="{Binding MathLens.FrameLabel}" />
+          <Button Grid.Column="6" Command="{Binding CancelMathLensCommand}" Content="取消/复位" />
+        </Grid>
+        <Grid Grid.Row="2" ColumnDefinitions="2*,3*" ColumnSpacing="12">
+          <TextBlock Grid.Column="0" Foreground="#FFD166" Text="{Binding MathLens.CurrentFrame.Title}" TextWrapping="Wrap" />
+          <TextBlock Grid.Column="1" Foreground="#BFC7DB" Text="{Binding MathLens.CurrentFrame.Annotation}" TextWrapping="Wrap" />
+        </Grid>
+      </Grid>
       </Grid>
     </Border>
 

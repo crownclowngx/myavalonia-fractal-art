@@ -100,7 +100,8 @@ internal sealed class LayerRasterTransformer : ILayerRasterTransformer
 
             for (var x = 0; x < source.Width; x++)
             {
-                var point = InverseMap(x + 0.5, y + 0.5, source.Width, source.Height, transform);
+                var point = LayerCoordinateProjection.InverseMap(
+                    x + 0.5, y + 0.5, source.Width, source.Height, transform);
                 SamplePremultiplied(input, source.Width, source.Height, point.X - 0.5, point.Y - 0.5,
                     output, (y * source.Width + x) * 4);
             }
@@ -128,35 +129,13 @@ internal sealed class LayerRasterTransformer : ILayerRasterTransformer
 
             for (var x = 0; x < source.Width; x++)
             {
-                var point = InverseMap(x + 0.5, y + 0.5, source.Width, source.Height, transform);
+                var point = LayerCoordinateProjection.InverseMap(
+                    x + 0.5, y + 0.5, source.Width, source.Height, transform);
                 output[y * source.Width + x] = SampleByte(input, source.Width, source.Height, point.X - 0.5, point.Y - 0.5);
             }
         }
 
         return new Mask(source.Width, source.Height, output);
-    }
-
-    /// <summary>
-    /// 对目标像素应用逆变换，避免正向投影留下空洞。屏幕 Y 轴向下，所以数学上的负角度对应用户看到的顺时针正角度。
-    /// </summary>
-    private static (double X, double Y) InverseMap(
-        double x,
-        double y,
-        int width,
-        int height,
-        LayerTransformDefinition transform)
-    {
-        var anchorX = width * transform.AnchorXPercent / 100d;
-        var anchorY = height * transform.AnchorYPercent / 100d;
-        var translatedX = x - anchorX - width * transform.PositionXPercent / 100d;
-        var translatedY = y - anchorY - height * transform.PositionYPercent / 100d;
-        var radians = -transform.RotationDegrees * Math.PI / 180d;
-        var cosine = Math.Cos(radians);
-        var sine = Math.Sin(radians);
-        var scale = transform.ScalePercent / 100d;
-        return (
-            (translatedX * cosine - translatedY * sine) / scale + anchorX,
-            (translatedX * sine + translatedY * cosine) / scale + anchorY);
     }
 
     private static void SamplePremultiplied(

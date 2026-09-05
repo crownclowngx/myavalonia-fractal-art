@@ -15,6 +15,8 @@ public sealed class DomainDependencyTests
             typeof(Mask),
             typeof(HighPrecisionViewport),
             typeof(RenderContext),
+            typeof(MathLensAnalysis),
+            typeof(MathLensFrame),
             typeof(ArbitraryDecimal),
             typeof(PrecisionDescriptor)
         };

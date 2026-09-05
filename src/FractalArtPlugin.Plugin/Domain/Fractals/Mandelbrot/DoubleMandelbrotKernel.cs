@@ -31,29 +31,14 @@ internal sealed class DoubleMandelbrotKernel : IMandelbrotKernel
             var constantReal = left;
             for (var x = 0; x < context.Width; x++, constantReal += step)
             {
-                var real = 0d;
-                var imaginary = 0d;
-                var iteration = 0;
-                while (iteration < definition.MaxIterations && real * real + imaginary * imaginary <= 4d)
-                {
-                    if (iteration % context.CancellationCheckInterval == 0)
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-                    }
-
-                    var nextReal = real * real - imaginary * imaginary + constantReal;
-                    imaginary = 2d * real * imaginary + constantImaginary;
-                    real = nextReal;
-                    iteration++;
-                }
-
-                JuliaScalar.Write(
-                    values,
-                    escaped,
-                    y * context.Width + x,
-                    iteration,
+                EscapeOrbitMath.ComputeDouble(
+                    0,
+                    0,
+                    constantReal,
+                    constantImaginary,
                     definition.MaxIterations,
-                    real * real + imaginary * imaginary);
+                    context.CancellationCheckInterval,
+                    cancellationToken).Write(values, escaped, y * context.Width + x, definition.MaxIterations);
             }
         }
 

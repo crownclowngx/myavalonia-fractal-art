@@ -19,7 +19,7 @@ internal sealed class PointDensityRenderer : IPointDensityRenderer
         ArgumentNullException.ThrowIfNull(definition);
         ArgumentNullException.ThrowIfNull(context);
         var histogram = new int[checked(context.Width * context.Height)];
-        var transform = CreateTransform(cloud, context.Width, context.Height);
+        var transform = PointCloudProjection.Create(cloud, context.Width, context.Height);
         var batchCount = (cloud.Points.Count + ParallelBatchSize - 1) / ParallelBatchSize;
         var batches = Enumerable.Range(0, batchCount)
             .Select(batch => (
@@ -83,20 +83,6 @@ internal sealed class PointDensityRenderer : IPointDensityRenderer
             new RenderDiagnostics("attractor-density", 0, 0, context.MaxDegreeOfParallelism, 0, 0));
     }
 
-    private static DensityTransform CreateTransform(PointCloud cloud, int width, int height)
-    {
-        var centerX = (cloud.MinimumX + cloud.MaximumX) / 2d;
-        var centerY = (cloud.MinimumY + cloud.MaximumY) / 2d;
-        // 退化轴采用“以边界中心为中心的一单位跨度”，而不是把极小浮点误差放大到整张画布。
-        // 这既满足单点/直线点云的稳定取景，也让另一个非退化轴继续参与统一的等比缩放。
-        var spanX = cloud.MaximumX > cloud.MinimumX ? cloud.MaximumX - cloud.MinimumX : 1d;
-        var spanY = cloud.MaximumY > cloud.MinimumY ? cloud.MaximumY - cloud.MinimumY : 1d;
-        var usableWidth = Math.Max(1d, (width - 1) * 0.9d);
-        var usableHeight = Math.Max(1d, (height - 1) * 0.9d);
-        var scale = Math.Min(usableWidth / spanX, usableHeight / spanY);
-        return new DensityTransform(centerX, centerY, scale, (width - 1) / 2d, (height - 1) / 2d);
-    }
-
     private static void Accumulate(int[] histogram, int width, int height, (double X, double Y) point)
     {
         var x0 = Math.Clamp((int)Math.Floor(point.X), 0, width - 1);
@@ -118,17 +104,41 @@ internal sealed class PointDensityRenderer : IPointDensityRenderer
         if (w11 > 0) Interlocked.Add(ref histogram[y1 * width + x1], w11);
     }
 
-    private readonly record struct DensityTransform(
-        double CenterX,
-        double CenterY,
-        double Scale,
-        double TargetCenterX,
-        double TargetCenterY)
+}
+
+/// <summary>
+/// 点云公式空间到密度画布的唯一投影。数学透镜和整数密度累积共享该值对象，因而解释层展示的点不会因
+/// 自己估算边界或边距而偏离实际作品。它不持有点云，创建后只是可安全复用的不可变换算参数。
+/// </summary>
+internal readonly record struct PointCloudProjection(
+    double CenterX,
+    double CenterY,
+    double Scale,
+    double TargetCenterX,
+    double TargetCenterY)
+{
+    public static PointCloudProjection Create(PointCloud cloud, int width, int height)
     {
-        public (double X, double Y) Map(PointSample point) =>
-            (TargetCenterX + (point.X - CenterX) * Scale,
-             TargetCenterY - (point.Y - CenterY) * Scale);
+        ArgumentNullException.ThrowIfNull(cloud);
+        if (width <= 0 || height <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(width), "投影画布尺寸必须为正数。");
+        }
+
+        var centerX = (cloud.MinimumX + cloud.MaximumX) / 2d;
+        var centerY = (cloud.MinimumY + cloud.MaximumY) / 2d;
+        // 退化轴采用“以边界中心为中心的一单位跨度”，而不是把极小浮点误差放大到整张画布。
+        var spanX = cloud.MaximumX > cloud.MinimumX ? cloud.MaximumX - cloud.MinimumX : 1d;
+        var spanY = cloud.MaximumY > cloud.MinimumY ? cloud.MaximumY - cloud.MinimumY : 1d;
+        var usableWidth = Math.Max(1d, (width - 1) * 0.9d);
+        var usableHeight = Math.Max(1d, (height - 1) * 0.9d);
+        var scale = Math.Min(usableWidth / spanX, usableHeight / spanY);
+        return new PointCloudProjection(centerX, centerY, scale, (width - 1) / 2d, (height - 1) / 2d);
     }
+
+    public (double X, double Y) Map(PointSample point) =>
+        (TargetCenterX + (point.X - CenterX) * Scale,
+         TargetCenterY - (point.Y - CenterY) * Scale);
 }
 
 /// <summary>

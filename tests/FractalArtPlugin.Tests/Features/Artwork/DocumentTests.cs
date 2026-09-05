@@ -413,6 +413,28 @@ public sealed class DocumentTests
         Assert.Equal(0.15, document.ToneBrightness);
     }
 
+    [Fact]
+    public async Task 数学透镜会话不改变Dirty历史快照或预览指纹()
+    {
+        using var fixture = new DocumentFixture();
+        using var document = fixture.CreateDocument();
+        await document.InitializeAsync(new NewDocumentActivation("G0010"), CancellationToken.None);
+        var before = await document.CaptureSaveSnapshotAsync(CancellationToken.None);
+        var fingerprint = document.LastPreviewFingerprint;
+
+        await document.ToggleMathLensCommand.ExecuteAsync(null);
+        document.NextMathLensFrameCommand.Execute(null);
+        await document.SelectMathLensPointAsync(0.42, 0.58);
+        document.CancelMathLensCommand.Execute(null);
+        var after = await document.CaptureSaveSnapshotAsync(CancellationToken.None);
+
+        Assert.True(document.MathLens.IsOpen);
+        Assert.False(document.IsDirty);
+        Assert.False(document.CanUndo);
+        Assert.Equal(fingerprint, document.LastPreviewFingerprint);
+        Assert.Equal(before.Content.Payload.GetRawText(), after.Content.Payload.GetRawText());
+    }
+
     private static async Task WaitUntilAsync(Func<bool> predicate)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -440,6 +462,16 @@ public sealed class DocumentTests
         {
             var validator = new ArtworkValidator();
             var generator = new VariationGenerator(validator);
+            var lSystemValidator = new LSystemValidator();
+            var kernels = new IAttractorFormulaKernel[] { new CliffordAttractorKernel(), new DeJongAttractorKernel() };
+            var mathLens = new MathLensSession(new MathLensService([
+                new EscapeTimeMathLensProvider(new LinearGradientMapper()),
+                new PathMathLensProvider(
+                    new RecursiveTreePathGenerator(),
+                    new LSystemExpander(lSystemValidator),
+                    new TurtlePathInterpreter()),
+                new AttractorMathLensProvider(new StrangeAttractorPointGenerator(kernels), kernels)
+            ]));
             return new FractalArtworkDocument(
                 validator,
                 new ArtworkSnapshotCodec(validator),
@@ -453,7 +485,8 @@ public sealed class DocumentTests
                 new ArtworkPresetCatalog(),
                 _lifetime,
                 imageLabCoordinator: imageLabCoordinator,
-                imageLabExportDialog: imageLabExportDialog);
+                imageLabExportDialog: imageLabExportDialog,
+                mathLensSession: mathLens);
         }
 
         public void Dispose() => _lifetime.Dispose();

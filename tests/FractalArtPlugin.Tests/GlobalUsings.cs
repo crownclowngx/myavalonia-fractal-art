@@ -1,5 +1,6 @@
 global using FractalArtPlugin.Application;
 global using FractalArtPlugin.Domain.Artwork;
+global using FractalArtPlugin.Domain.Fractals;
 global using FractalArtPlugin.Domain.Fractals.Julia;
 global using FractalArtPlugin.Domain.Fractals.Mandelbrot;
 global using FractalArtPlugin.Domain.Fractals.LSystem;

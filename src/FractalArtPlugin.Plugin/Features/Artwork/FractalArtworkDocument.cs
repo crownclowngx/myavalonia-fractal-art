@@ -1,5 +1,6 @@
 using Avalonia.Media.Imaging;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FractalArtPlugin.Application;
@@ -61,7 +62,8 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         IImageLabExportDialog? imageLabExportDialog = null,
         IWorkflowRecipeFiles? workflowRecipeFiles = null,
         IWorkflowRecipeDialog? workflowRecipeDialog = null,
-        IArtworkLayerEditor? layerEditor = null)
+        IArtworkLayerEditor? layerEditor = null,
+        MathLensSession? mathLensSession = null)
     {
         _validator = validator;
         _snapshotCodec = snapshotCodec;
@@ -80,6 +82,8 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         _workflowRecipeFiles = workflowRecipeFiles;
         _workflowRecipeDialog = workflowRecipeDialog;
         _layerEditor = layerEditor ?? new ArtworkLayerEditor(validator);
+        MathLens = mathLensSession ?? new MathLensSession(null);
+        MathLens.PropertyChanged += HandleMathLensPropertyChanged;
     }
 
     [ObservableProperty] private Bitmap? _previewImage;
@@ -95,8 +99,10 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
     public bool IsDirty => _revision != _acceptedRevision;
     public bool CanUndo => _history.CanUndo;
     public bool CanRedo => _history.CanRedo;
-    public bool IsOperationBusy => IsRendering || IsExporting || IsImageLabExporting || IsExploring;
+    public bool IsOperationBusy => IsRendering || IsExporting || IsImageLabExporting || IsExploring || MathLens.IsBusy;
     public bool IsPreviewEmpty => PreviewImage is null;
+    public bool IsMathLensOpen => MathLens.IsOpen;
+    public bool IsMathLensClosed => !MathLens.IsOpen;
 
     // G0007 参数是一次导出会话的临时状态，不写入作品快照，也不推进 Document Revision。
     [ObservableProperty] private bool _imageLabBlurEnabled = true;
@@ -110,6 +116,7 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
     [ObservableProperty] private long _imageLabGrainSeed;
 
     internal ArtworkDefinition Artwork => _artwork;
+    public MathLensSession MathLens { get; }
     public ObservableCollection<ArtworkLayerItem> LayerItems { get; } = [];
     public ObservableCollection<MaskSourceOption> MaskSources { get; } = [];
     public ObservableCollection<LayerGroupOption> GroupOptions { get; } = [];
@@ -649,6 +656,7 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         _validator.Validate(candidate);
         cancellationToken.ThrowIfCancellationRequested();
 
+        MathLens.Close();
         _artwork = candidate;
         _history.Clear();
         _revision = _acceptedRevision = 0;
@@ -1122,7 +1130,46 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         _previewCancellation?.Cancel();
         _exportCancellation?.Cancel();
         _variationCancellation?.Cancel();
+        if (MathLens.IsOpen)
+        {
+            MathLens.Cancel();
+        }
     }
+
+    [RelayCommand]
+    private async Task ToggleMathLensAsync()
+    {
+        if (MathLens.IsOpen)
+        {
+            MathLens.Close();
+            StatusMessage = "数学透镜已关闭，画布交互已恢复。";
+            return;
+        }
+
+        await MathLens.OpenAsync(_artwork, SelectedLayer.Id).ConfigureAwait(true);
+        StatusMessage = MathLens.Status;
+    }
+
+    [RelayCommand]
+    private void PlayMathLens() => MathLens.Play();
+
+    [RelayCommand]
+    private void PauseMathLens() => MathLens.Pause();
+
+    [RelayCommand]
+    private void PreviousMathLensFrame() => MathLens.Previous();
+
+    [RelayCommand]
+    private void NextMathLensFrame() => MathLens.Next();
+
+    [RelayCommand]
+    private void ResetMathLens() => MathLens.Reset();
+
+    [RelayCommand]
+    private void CancelMathLens() => MathLens.Cancel();
+
+    internal Task SelectMathLensPointAsync(double normalizedX, double normalizedY) =>
+        MathLens.SelectPointAsync(_artwork, SelectedLayer.Id, normalizedX, normalizedY);
 
     internal Task RenderPreviewNowAsync(CancellationToken cancellationToken = default) =>
         RenderPreviewCoreAsync(debounce: false, cancellationToken);
@@ -1454,6 +1501,7 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         }
 
         _validator.Validate(candidate);
+        var previousLayer = _artwork.SelectedFractalLayer;
         var wasDirty = IsDirty;
         if (recordHistory)
         {
@@ -1463,6 +1511,7 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         _revision++;
         NotifyArtworkProperties();
         NotifyHistoryAndDirty(wasDirty);
+        RefreshMathLens(previousLayer, candidate.SelectedFractalLayer);
         if (renderPreview)
         {
             _ = RenderPreviewCoreAsync(debounce: true, CancellationToken.None);
@@ -1522,12 +1571,14 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
     private void ApplyHistory(ArtworkDefinition candidate)
     {
         CancelVariationWork();
+        var previousLayer = _artwork.SelectedFractalLayer;
         var wasDirty = IsDirty;
         _artwork = candidate;
         _revision++;
         NotifyArtworkProperties();
         NotifyHistoryAndDirty(wasDirty);
         RefreshVariationPresentationAfterHistory();
+        RefreshMathLens(previousLayer, candidate.SelectedFractalLayer);
         _ = RenderPreviewCoreAsync(debounce: false, CancellationToken.None);
     }
 
@@ -1833,6 +1884,38 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
     partial void OnIsExploringChanged(bool value) => OnPropertyChanged(nameof(IsOperationBusy));
     partial void OnPreviewImageChanged(Bitmap? value) => OnPropertyChanged(nameof(IsPreviewEmpty));
 
+    private void HandleMathLensPropertyChanged(object? sender, PropertyChangedEventArgs eventArgs)
+    {
+        if (eventArgs.PropertyName == nameof(MathLensSession.IsOpen))
+        {
+            OnPropertyChanged(nameof(IsMathLensOpen));
+            OnPropertyChanged(nameof(IsMathLensClosed));
+        }
+
+        if (eventArgs.PropertyName == nameof(MathLensSession.IsBusy))
+        {
+            OnPropertyChanged(nameof(IsOperationBusy));
+        }
+
+        if (eventArgs.PropertyName == nameof(MathLensSession.Status))
+        {
+            StatusMessage = MathLens.Status;
+        }
+    }
+
+    private void RefreshMathLens(FractalLayerDefinition previous, FractalLayerDefinition current)
+    {
+        if (!MathLens.IsOpen)
+        {
+            return;
+        }
+
+        var preserveSelection = previous.Id == current.Id &&
+            previous.GeneratorKind is FractalGeneratorKind.Julia or FractalGeneratorKind.Mandelbrot &&
+            current.GeneratorKind is FractalGeneratorKind.Julia or FractalGeneratorKind.Mandelbrot;
+        _ = MathLens.RefreshAsync(_artwork, SelectedLayer.Id, preserveSelection);
+    }
+
     public void Dispose()
     {
         if (_disposed)
@@ -1845,6 +1928,8 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         CancelAndDispose(ref _previewCancellation);
         CancelAndDispose(ref _exportCancellation);
         CancelAndDispose(ref _variationCancellation);
+        MathLens.PropertyChanged -= HandleMathLensPropertyChanged;
+        MathLens.Dispose();
         foreach (var item in VariationCandidates)
         {
             item.Dispose();

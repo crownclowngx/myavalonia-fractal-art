@@ -63,10 +63,13 @@ public sealed class PluginCompositionTests
         var secondCache = secondScope.ServiceProvider.GetRequiredService<IArtworkGraphCache>();
         var firstPipeline = firstScope.ServiceProvider.GetRequiredService<IArtworkRenderPipeline>();
         var secondPipeline = secondScope.ServiceProvider.GetRequiredService<IArtworkRenderPipeline>();
+        var firstLens = firstScope.ServiceProvider.GetRequiredService<MathLensSession>();
+        var secondLens = secondScope.ServiceProvider.GetRequiredService<MathLensSession>();
 
         Assert.NotSame(first, second);
         Assert.NotSame(firstCache, secondCache);
         Assert.NotSame(firstPipeline, secondPipeline);
+        Assert.NotSame(firstLens, secondLens);
     }
 
     private sealed class CapturingRegistration : IPluginRegistration, IWorkflowActionRegistration, IWorkbenchCommandRegistration

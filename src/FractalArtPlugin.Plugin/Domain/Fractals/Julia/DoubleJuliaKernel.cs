@@ -31,23 +31,14 @@ internal sealed class DoubleJuliaKernel : IJuliaKernel
             var real = left;
             for (var x = 0; x < context.Width; x++, real += step)
             {
-                var zr = real;
-                var zi = imaginary;
-                var iteration = 0;
-                while (iteration < definition.MaxIterations && zr * zr + zi * zi <= 4d)
-                {
-                    if (iteration % context.CancellationCheckInterval == 0)
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-                    }
-
-                    var nextReal = zr * zr - zi * zi + constantReal;
-                    zi = 2d * zr * zi + constantImaginary;
-                    zr = nextReal;
-                    iteration++;
-                }
-
-                JuliaScalar.Write(values, escaped, y * context.Width + x, iteration, definition.MaxIterations, zr * zr + zi * zi);
+                EscapeOrbitMath.ComputeDouble(
+                    real,
+                    imaginary,
+                    constantReal,
+                    constantImaginary,
+                    definition.MaxIterations,
+                    context.CancellationCheckInterval,
+                    cancellationToken).Write(values, escaped, y * context.Width + x, definition.MaxIterations);
             }
         }
 
