@@ -21,6 +21,7 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
     private readonly IArtworkRenderPipeline _renderPipeline;
     private readonly IPreviewImageFactory _previewImageFactory;
     private readonly IArtworkExporter _exporter;
+    private readonly IArtworkExportPlanner _exportPlanner;
     private readonly IArtworkExportDialog _exportDialog;
     private readonly IArtworkHistory _history;
     private readonly IArtisticParameterMapper _artisticParameterMapper;
@@ -32,6 +33,7 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
     private readonly IWorkflowRecipeFiles? _workflowRecipeFiles;
     private readonly IWorkflowRecipeDialog? _workflowRecipeDialog;
     private readonly IArtworkLayerEditor _layerEditor;
+    private readonly IArtworkCompatibilityService _compatibilityService;
     private readonly IDocumentLifetime _lifetime;
     private ArtworkDefinition _artwork = ArtworkDefinition.CreateDefault();
     private DocumentPresentationState _presentation = new("分形作品");
@@ -43,6 +45,10 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
     private long _acceptedRevision;
     private long _variationGeneration;
     private ArtworkDefinition? _viewportInteractionStart;
+    private int _exportWidth = 1200;
+    private int _exportHeight = 800;
+    private bool _exportSizeCustomized;
+    private bool _updatingExportSize;
     private bool _disposed;
 
     public FractalArtworkDocument(
@@ -63,13 +69,19 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         IWorkflowRecipeFiles? workflowRecipeFiles = null,
         IWorkflowRecipeDialog? workflowRecipeDialog = null,
         IArtworkLayerEditor? layerEditor = null,
-        MathLensSession? mathLensSession = null)
+        MathLensSession? mathLensSession = null,
+        IArtworkExportPlanner? exportPlanner = null,
+        IArtworkCompatibilityService? compatibilityService = null)
     {
         _validator = validator;
         _snapshotCodec = snapshotCodec;
         _renderPipeline = renderPipeline;
         _previewImageFactory = previewImageFactory;
         _exporter = exporter;
+        _exportPlanner = exportPlanner ?? new ArtworkExportPlanner(
+            validator,
+            validator as IArtworkRenderabilityValidator ??
+                throw new ArgumentException("作品验证器必须同时提供可渲染性检查。", nameof(validator)));
         _exportDialog = exportDialog;
         _history = history;
         _artisticParameterMapper = artisticParameterMapper;
@@ -82,6 +94,7 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         _workflowRecipeFiles = workflowRecipeFiles;
         _workflowRecipeDialog = workflowRecipeDialog;
         _layerEditor = layerEditor ?? new ArtworkLayerEditor(validator);
+        _compatibilityService = compatibilityService ?? new ArtworkCompatibilityService(validator);
         MathLens = mathLensSession ?? new MathLensSession(null);
         MathLens.PropertyChanged += HandleMathLensPropertyChanged;
     }
@@ -94,6 +107,14 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
     [ObservableProperty] private string _statusMessage = "正在准备分形预览…";
     [ObservableProperty] private string _lastPreviewFingerprint = string.Empty;
     [ObservableProperty] private TransientPreviewTransform _transientPreview = TransientPreviewTransform.Identity;
+    [ObservableProperty] private ArtworkWorkspacePhase _workspacePhase = ArtworkWorkspacePhase.Loading;
+    [ObservableProperty] private string _workspaceTitle = "正在准备作品";
+    [ObservableProperty] private string _workspaceMessage = "正在生成第一张可编辑预览…";
+    [ObservableProperty] private bool _showGettingStarted;
+    [ObservableProperty] private ArtworkCompatibilityReport _compatibilityReport = ArtworkCompatibilityReport.Compatible;
+    [ObservableProperty] private bool _lockExportAspectRatio = true;
+    [ObservableProperty] private bool _exportTransparentBackground;
+    [ObservableProperty] private string _exportValidationMessage = string.Empty;
 
     public DocumentPresentationState Presentation => _presentation;
     public bool IsDirty => _revision != _acceptedRevision;
@@ -101,6 +122,27 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
     public bool CanRedo => _history.CanRedo;
     public bool IsOperationBusy => IsRendering || IsExporting || IsImageLabExporting || IsExploring || MathLens.IsBusy;
     public bool IsPreviewEmpty => PreviewImage is null;
+    public bool IsWorkspaceLoading => WorkspacePhase == ArtworkWorkspacePhase.Loading;
+    public bool IsWorkspaceReady => WorkspacePhase == ArtworkWorkspacePhase.Ready;
+    public bool IsWorkspaceBlocked => WorkspacePhase == ArtworkWorkspacePhase.Blocked;
+    public bool IsWorkspaceFailed => WorkspacePhase == ArtworkWorkspacePhase.Failed;
+    public bool ShowWorkspaceFailureBanner => IsWorkspaceFailed && PreviewImage is not null;
+    public bool HasWorkspaceOverlay => ShowGettingStarted || IsWorkspaceBlocked ||
+        PreviewImage is null && WorkspacePhase is ArtworkWorkspacePhase.Loading or ArtworkWorkspacePhase.Failed;
+    public int ExportWidth
+    {
+        get => _exportWidth;
+        set => SetExportWidth(value, customized: true);
+    }
+
+    public int ExportHeight
+    {
+        get => _exportHeight;
+        set => SetExportHeight(value, customized: true);
+    }
+
+    public string ExportSummary => $"输出 {ExportWidth}×{ExportHeight} · " +
+        (ExportTransparentBackground ? "透明画布背景" : "保留作品背景");
     public bool IsMathLensOpen => MathLens.IsOpen;
     public bool IsMathLensClosed => !MathLens.IsOpen;
 
@@ -650,6 +692,7 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         ArgumentNullException.ThrowIfNull(activation);
         cancellationToken.ThrowIfCancellationRequested();
 
+        var isRestored = activation is RestoreDocumentActivation;
         var candidate = activation is RestoreDocumentActivation restore
             ? _snapshotCodec.Decode(restore.RestoredContent)
             : ArtworkDefinition.CreateDefault();
@@ -660,10 +703,18 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         _artwork = candidate;
         _history.Clear();
         _revision = _acceptedRevision = 0;
+        ShowGettingStarted = !isRestored;
+        ResetExportSizeCore();
         _presentation = new DocumentPresentationState(
             string.IsNullOrWhiteSpace(activation.Title) ? "分形作品" : activation.Title);
         PresentationChanged?.Invoke(this, EventArgs.Empty);
         NotifyArtworkProperties();
+        RefreshCompatibilityState();
+        if (!CompatibilityReport.CanRender)
+        {
+            return;
+        }
+
         await RenderPreviewCoreAsync(debounce: false, cancellationToken).ConfigureAwait(true);
         if (_artwork.Exploration.Candidates.Count > 0)
         {
@@ -694,6 +745,38 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
 
     [RelayCommand]
     private Task RefreshPreviewAsync() => RenderPreviewCoreAsync(debounce: false, CancellationToken.None);
+
+    [RelayCommand]
+    private Task RetryPreviewAsync() => RenderPreviewCoreAsync(debounce: false, CancellationToken.None);
+
+    [RelayCommand]
+    private void DismissGettingStarted() => ShowGettingStarted = false;
+
+    [RelayCommand]
+    private void ResetExportSize() => ResetExportSizeCore();
+
+    [RelayCommand]
+    private void RemoveUnavailableCapability(ArtworkCompatibilityIssue? issue)
+    {
+        if (issue is null)
+        {
+            return;
+        }
+
+        try
+        {
+            // 按钮代表用户对这一项不透明配置的明确删除意图。删除仍走普通 Mutate，因而可撤销、可重做，
+            // 也会在保存前再次经过完整领域验证；绝不在打开文件时自动执行。
+            Mutate(_compatibilityService.Remove(_artwork, issue.Key));
+            StatusMessage = CompatibilityReport.CanRender
+                ? "缺失能力已移除，作品已恢复渲染；该操作可以撤销。"
+                : $"已移除 {issue.Description}；仍有 {CompatibilityReport.Issues.Count} 项缺失能力。";
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or InvalidDataException)
+        {
+            StatusMessage = exception.Message;
+        }
+    }
 
     [RelayCommand]
     private void Undo()
@@ -969,6 +1052,21 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         var token = current.Token;
         try
         {
+            ArtworkExportPlan plan;
+            try
+            {
+                plan = _exportPlanner.Create(
+                    _artwork,
+                    new ArtworkExportRequest(ExportWidth, ExportHeight, ExportTransparentBackground));
+                ExportValidationMessage = string.Empty;
+            }
+            catch (Exception exception) when (exception is InvalidDataException or NotSupportedException or ArgumentException or InvalidOperationException)
+            {
+                ExportValidationMessage = exception.Message;
+                StatusMessage = $"无法导出：{exception.Message}";
+                return;
+            }
+
             var path = await _exportDialog.PickPngPathAsync("fractal-art.png", token).ConfigureAwait(true);
             if (string.IsNullOrWhiteSpace(path))
             {
@@ -977,9 +1075,8 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
             }
 
             IsExporting = true;
-            StatusMessage = $"正在以 {CanvasWidth}×{CanvasHeight} 最终质量重新渲染…";
-            var snapshot = _artwork;
-            await _exporter.ExportAsync(snapshot, path, token).ConfigureAwait(true);
+            StatusMessage = $"正在以 {plan.Context.Width}×{plan.Context.Height} 最终质量重新渲染…";
+            await _exporter.ExportAsync(plan, path, token).ConfigureAwait(true);
             if (!_lifetime.IsClosing)
             {
                 StatusMessage = $"PNG 已原子导出：{path}";
@@ -1502,6 +1599,7 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
 
         _validator.Validate(candidate);
         var previousLayer = _artwork.SelectedFractalLayer;
+        var previousCanvas = _artwork.Canvas;
         var wasDirty = IsDirty;
         if (recordHistory)
         {
@@ -1509,14 +1607,119 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         }
         _artwork = candidate;
         _revision++;
+        if (recordHistory)
+        {
+            ShowGettingStarted = false;
+        }
+
+        if (!_exportSizeCustomized && previousCanvas != candidate.Canvas)
+        {
+            ResetExportSizeCore();
+        }
+
         NotifyArtworkProperties();
         NotifyHistoryAndDirty(wasDirty);
+        RefreshCompatibilityState();
         RefreshMathLens(previousLayer, candidate.SelectedFractalLayer);
-        if (renderPreview)
+        if (renderPreview && CompatibilityReport.CanRender)
         {
             _ = RenderPreviewCoreAsync(debounce: true, CancellationToken.None);
         }
     }
+
+    private void RefreshCompatibilityState()
+    {
+        CompatibilityReport = _compatibilityService.Inspect(_artwork);
+        ValidateExportRequest();
+        if (CompatibilityReport.CanRender)
+        {
+            return;
+        }
+
+        Interlocked.Increment(ref _previewGeneration);
+        CancelAndDispose(ref _previewCancellation);
+        IsRendering = false;
+        SetWorkspaceState(
+            ArtworkWorkspacePhase.Blocked,
+            "作品包含当前不可用的能力",
+            $"已无损保留配置，但为避免生成与原作不一致的画面，预览和导出已暂停。请安装对应能力，或明确移除下列 {CompatibilityReport.Issues.Count} 项配置。");
+        StatusMessage = WorkspaceMessage;
+    }
+
+    private void SetWorkspaceState(ArtworkWorkspacePhase phase, string title, string message)
+    {
+        WorkspacePhase = phase;
+        WorkspaceTitle = title;
+        WorkspaceMessage = message;
+    }
+
+    private void ResetExportSizeCore()
+    {
+        _updatingExportSize = true;
+        SetProperty(ref _exportWidth, _artwork.Canvas.Width, nameof(ExportWidth));
+        SetProperty(ref _exportHeight, _artwork.Canvas.Height, nameof(ExportHeight));
+        _updatingExportSize = false;
+        _exportSizeCustomized = false;
+        NotifyExportProperties();
+        ValidateExportRequest();
+    }
+
+    private void SetExportWidth(int value, bool customized)
+    {
+        if (!SetProperty(ref _exportWidth, value, nameof(ExportWidth)))
+        {
+            return;
+        }
+
+        if (!_updatingExportSize && LockExportAspectRatio && _artwork.Canvas.Width > 0)
+        {
+            _updatingExportSize = true;
+            var height = (int)Math.Round(value * (double)_artwork.Canvas.Height / _artwork.Canvas.Width);
+            SetProperty(ref _exportHeight, height, nameof(ExportHeight));
+            _updatingExportSize = false;
+        }
+
+        _exportSizeCustomized |= customized && !_updatingExportSize;
+        NotifyExportProperties();
+        ValidateExportRequest();
+    }
+
+    private void SetExportHeight(int value, bool customized)
+    {
+        if (!SetProperty(ref _exportHeight, value, nameof(ExportHeight)))
+        {
+            return;
+        }
+
+        if (!_updatingExportSize && LockExportAspectRatio && _artwork.Canvas.Height > 0)
+        {
+            _updatingExportSize = true;
+            var width = (int)Math.Round(value * (double)_artwork.Canvas.Width / _artwork.Canvas.Height);
+            SetProperty(ref _exportWidth, width, nameof(ExportWidth));
+            _updatingExportSize = false;
+        }
+
+        _exportSizeCustomized |= customized && !_updatingExportSize;
+        NotifyExportProperties();
+        ValidateExportRequest();
+    }
+
+    private void ValidateExportRequest()
+    {
+        try
+        {
+            _exportPlanner.Create(
+                _artwork,
+                new ArtworkExportRequest(ExportWidth, ExportHeight, ExportTransparentBackground));
+            ExportValidationMessage = string.Empty;
+        }
+        catch (Exception exception) when (exception is InvalidDataException or NotSupportedException or ArgumentException or InvalidOperationException)
+        {
+            ExportValidationMessage = exception.Message;
+        }
+    }
+
+    private void NotifyExportProperties() => OnPropertyChanged(nameof(ExportSummary));
 
     private void TryMutate(ArtworkDefinition candidate, bool recordHistory = true, bool renderPreview = true)
     {
@@ -1572,14 +1775,24 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
     {
         CancelVariationWork();
         var previousLayer = _artwork.SelectedFractalLayer;
+        var previousCanvas = _artwork.Canvas;
         var wasDirty = IsDirty;
         _artwork = candidate;
         _revision++;
+        if (!_exportSizeCustomized && previousCanvas != candidate.Canvas)
+        {
+            ResetExportSizeCore();
+        }
+
         NotifyArtworkProperties();
         NotifyHistoryAndDirty(wasDirty);
         RefreshVariationPresentationAfterHistory();
+        RefreshCompatibilityState();
         RefreshMathLens(previousLayer, candidate.SelectedFractalLayer);
-        _ = RenderPreviewCoreAsync(debounce: false, CancellationToken.None);
+        if (CompatibilityReport.CanRender)
+        {
+            _ = RenderPreviewCoreAsync(debounce: false, CancellationToken.None);
+        }
     }
 
     private void RefreshVariationPresentationAfterHistory()
@@ -1656,6 +1869,12 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
     private async Task RenderPreviewCoreAsync(bool debounce, CancellationToken externalCancellation)
     {
         ThrowIfDisposed();
+        RefreshCompatibilityState();
+        if (!CompatibilityReport.CanRender)
+        {
+            return;
+        }
+
         var current = CancellationTokenSource.CreateLinkedTokenSource(
             _lifetime.ClosingToken,
             externalCancellation);
@@ -1664,6 +1883,13 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
         previous?.Dispose();
         var generation = Interlocked.Increment(ref _previewGeneration);
         IsRendering = true;
+        if (PreviewImage is null || WorkspacePhase == ArtworkWorkspacePhase.Blocked)
+        {
+            SetWorkspaceState(
+                ArtworkWorkspacePhase.Loading,
+                "正在生成作品",
+                "首次预览完成前仍可查看快速开始；渲染取消或失败都不会生成错误成功画面。");
+        }
 
         try
         {
@@ -1711,6 +1937,13 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
             if (generation == Volatile.Read(ref _previewGeneration) && !_lifetime.IsClosing)
             {
                 StatusMessage = "预览已取消。";
+                if (PreviewImage is null)
+                {
+                    SetWorkspaceState(
+                        ArtworkWorkspacePhase.Loading,
+                        "预览已取消",
+                        "作品没有被修改；可以点击“重新预览”再次生成。");
+                }
             }
         }
         catch (Exception exception)
@@ -1718,6 +1951,10 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
             if (generation == Volatile.Read(ref _previewGeneration))
             {
                 StatusMessage = $"预览失败：{exception.Message}";
+                SetWorkspaceState(
+                    ArtworkWorkspacePhase.Failed,
+                    "预览生成失败",
+                    $"{exception.Message} 最后一张成功画面（如果存在）已保留，可以修正参数或重试。");
             }
         }
         finally
@@ -1769,6 +2006,10 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
             ? $"任意精度 {context.EffectivePrecisionDigits}/{context.ConfiguredPrecisionDigits} 位"
             : "double 快速模式";
         StatusMessage = $"预览完成 · {precision}{fallback} · renderer v{context.RendererVersion} · {LastPreviewFingerprint}";
+        SetWorkspaceState(
+            ArtworkWorkspacePhase.Ready,
+            "作品已就绪",
+            "预览、缩略图与导出均使用同一份作品配方和渲染管线。");
         return true;
     }
 
@@ -1882,7 +2123,35 @@ public sealed partial class FractalArtworkDocument : ObservableObject, IPersista
     partial void OnIsExportingChanged(bool value) => OnPropertyChanged(nameof(IsOperationBusy));
     partial void OnIsImageLabExportingChanged(bool value) => OnPropertyChanged(nameof(IsOperationBusy));
     partial void OnIsExploringChanged(bool value) => OnPropertyChanged(nameof(IsOperationBusy));
-    partial void OnPreviewImageChanged(Bitmap? value) => OnPropertyChanged(nameof(IsPreviewEmpty));
+    partial void OnPreviewImageChanged(Bitmap? value)
+    {
+        OnPropertyChanged(nameof(IsPreviewEmpty));
+        OnPropertyChanged(nameof(HasWorkspaceOverlay));
+        OnPropertyChanged(nameof(ShowWorkspaceFailureBanner));
+    }
+
+    partial void OnWorkspacePhaseChanged(ArtworkWorkspacePhase value)
+    {
+        OnPropertyChanged(nameof(IsWorkspaceLoading));
+        OnPropertyChanged(nameof(IsWorkspaceReady));
+        OnPropertyChanged(nameof(IsWorkspaceBlocked));
+        OnPropertyChanged(nameof(IsWorkspaceFailed));
+        OnPropertyChanged(nameof(HasWorkspaceOverlay));
+        OnPropertyChanged(nameof(ShowWorkspaceFailureBanner));
+    }
+
+    partial void OnShowGettingStartedChanged(bool value) => OnPropertyChanged(nameof(HasWorkspaceOverlay));
+
+    partial void OnCompatibilityReportChanged(ArtworkCompatibilityReport value) =>
+        OnPropertyChanged(nameof(HasWorkspaceOverlay));
+
+    partial void OnLockExportAspectRatioChanged(bool value) => ValidateExportRequest();
+
+    partial void OnExportTransparentBackgroundChanged(bool value)
+    {
+        NotifyExportProperties();
+        ValidateExportRequest();
+    }
 
     private void HandleMathLensPropertyChanged(object? sender, PropertyChangedEventArgs eventArgs)
     {

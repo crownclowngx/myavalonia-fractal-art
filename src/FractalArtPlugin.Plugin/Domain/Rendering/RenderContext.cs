@@ -55,6 +55,33 @@ public sealed record RenderContext(
     public static RenderContext ForExport(ArtworkDefinition artwork) => Create(artwork, RenderQuality.Final);
 
     /// <summary>
+    /// 缩略图与主预览共享同一渲染质量语义，只收窄像素边界和内部并行度。这里直接从真实作品推导尺寸，
+    /// 不临时改写 Canvas，因此缓存键、Alpha、合成、效果和生成器参数仍由同一条生产管线解释。
+    /// </summary>
+    public static RenderContext ForThumbnail(ArtworkDefinition artwork, int maximumEdge)
+    {
+        ArgumentNullException.ThrowIfNull(artwork);
+        if (maximumEdge <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumEdge), "缩略图最大边必须大于零。");
+        }
+
+        var context = Create(artwork with
+        {
+            Presentation = artwork.Presentation with { HighQualityPreview = false }
+        }, RenderQuality.Draft);
+        var ratio = Math.Min(1d, Math.Min(
+            (double)maximumEdge / artwork.Canvas.Width,
+            (double)maximumEdge / artwork.Canvas.Height));
+        return context with
+        {
+            Width = Math.Max(1, (int)Math.Round(artwork.Canvas.Width * ratio)),
+            Height = Math.Max(1, (int)Math.Round(artwork.Canvas.Height * ratio)),
+            MaxDegreeOfParallelism = 1
+        };
+    }
+
+    /// <summary>
     /// 合成帧先确定统一像素尺寸，再为每个分形层独立选择数值精度。这样深缩放层不会迫使路径层携带伪精度，
     /// 也不会错误沿用当前 UI 选中层的 Julia/Mandelbrot 策略。
     /// </summary>

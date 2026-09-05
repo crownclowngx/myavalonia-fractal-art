@@ -42,7 +42,7 @@ Standalone 适合快速检查 AXAML、编译绑定、命令和插件自身对象
 3. [临时部署、正式发布与验收](deployment-and-release.md)
 4. [Workflow Action Provider 与 Consumer 接入](workflow-actions.md)
 5. [Workbench Command 开发说明](workbench-commands.md)
-6. [G0001–G0010 重构实施档案](refactoring/README.md)
+6. [G0001–G0011 重构实施档案](refactoring/README.md)
 7. [G0005.1 双生成器入口与可编辑 L-System 计划](refactoring/G0005.1/plan.md)
 8. [G0003 高精度性能与领域模块化专项档案](refactoring/G0003/precision-performance/result.md)
 9. [G0006 创作图与缓存设计](refactoring/G0006/graph-cache-design.md)
@@ -50,6 +50,7 @@ Standalone 适合快速检查 AXAML、编译绑定、命令和插件自身对象
 11. [G0008 多图层合成与遮罩设计](refactoring/G0008/composition-design.md)
 12. [G0009 点云、密度与局部发光设计](refactoring/G0009/point-cloud-density-design.md)
 13. [G0010 数学透镜设计](refactoring/G0010/math-lens-design.md)
+14. [G0011 静态作品闭环设计](refactoring/G0011/static-artwork-closure-design.md)
 
 ## 开发前记住
 
@@ -61,4 +62,4 @@ Standalone 适合快速检查 AXAML、编译绑定、命令和插件自身对象
 - 当前交付目标是 Windows x64；插件替换后必须完整重启 Host，不支持热更新。
 - Workflow Action Provider 与 Consumer 可以在 Host 安全治理下由同一插件承担；自有 Action 会从 caller-bound
   目录过滤，自调用与 Handler 嵌套调用会被拒绝。Fractal 的具体边界见 G0007 专项文档。
-- Workbench Command 只提升跨工作台有价值的用户意图；G0001–G0010 当前保持零全局命令和零快捷键。
+- Workbench Command 只提升跨工作台有价值的用户意图；G0001–G0011 当前保持零全局命令和零快捷键。

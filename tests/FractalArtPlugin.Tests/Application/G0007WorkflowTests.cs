@@ -46,7 +46,7 @@ public sealed class G0007WorkflowTests
     public async Task Artifact创建后具有所有权标记摘要且释放幂等()
     {
         var operationId = Guid.NewGuid();
-        var store = new FractalWorkflowArtifactStore(new StubExporter());
+        var store = new FractalWorkflowArtifactStore(new StubExporter(), CreateExportPlanner());
         WorkflowFileArtifact? artifact = null;
         try
         {
@@ -77,7 +77,7 @@ public sealed class G0007WorkflowTests
     public async Task Release拒绝伪造路径和transient责任越界()
     {
         var operationId = Guid.NewGuid();
-        var store = new FractalWorkflowArtifactStore(new StubExporter());
+        var store = new FractalWorkflowArtifactStore(new StubExporter(), CreateExportPlanner());
         var artifact = await store.CreateAsync(
             ArtworkDefinition.CreateDefault(), operationId,
             FractalWorkflowFileArtifactContract.TransientLifetime, CancellationToken.None);
@@ -172,8 +172,14 @@ public sealed class G0007WorkflowTests
 
     private sealed class StubExporter : IArtworkExporter
     {
-        public Task ExportAsync(ArtworkDefinition artwork, string path, CancellationToken cancellationToken) =>
+        public Task ExportAsync(ArtworkExportPlan plan, string path, CancellationToken cancellationToken) =>
             File.WriteAllBytesAsync(path, [137, 80, 78, 71, 13, 10, 26, 10], cancellationToken);
+    }
+
+    private static IArtworkExportPlanner CreateExportPlanner()
+    {
+        var validator = new ArtworkValidator();
+        return new ArtworkExportPlanner(validator, validator);
     }
 
     private sealed class RecordingArtifactStore : IFractalWorkflowArtifactStore

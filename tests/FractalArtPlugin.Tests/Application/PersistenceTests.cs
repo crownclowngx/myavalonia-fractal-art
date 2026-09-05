@@ -11,6 +11,28 @@ public sealed class PersistenceTests
     private readonly ArtworkSnapshotCodec _codec = new(new ArtworkValidator());
 
     [Fact]
+    public void V1到V8固定夹具全部迁移且V3以后得到同一默认作品()
+    {
+        var assembly = typeof(PersistenceTests).Assembly;
+        var resourceName = assembly.GetManifestResourceNames().Single(name =>
+            name.EndsWith("Fixtures.artwork-migrations.json", StringComparison.Ordinal));
+        using var stream = assembly.GetManifestResourceStream(resourceName)
+            ?? throw new InvalidOperationException("未找到作品迁移夹具资源。");
+        using var document = JsonDocument.Parse(stream);
+        var migrated = new List<ArtworkDefinition>();
+
+        for (var version = 1; version <= ArtworkDefinition.CurrentFormatVersion; version++)
+        {
+            var payload = document.RootElement.GetProperty($"v{version}").Clone();
+            var artwork = _codec.Decode(new DocumentContent(ArtworkSnapshotCodec.ContentSchemaVersion, payload));
+            Assert.Equal(ArtworkDefinition.CurrentFormatVersion, artwork.FormatVersion);
+            migrated.Add(artwork);
+        }
+
+        Assert.All(migrated.Skip(3), artwork => Assert.Equal(migrated[2], artwork));
+    }
+
+    [Fact]
     public void 作品快照往返保持全部配方状态()
     {
         var expected = ArtworkDefinition.CreateDefault() with

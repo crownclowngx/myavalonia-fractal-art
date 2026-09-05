@@ -26,15 +26,34 @@ internal sealed class PngEncoder : IPngEncoder
         header[9] = 6;
         WriteChunk(output, "IHDR"u8, header);
 
+        // 明确写入标准 sRGB 色彩解释，避免不同查看器把相同 RGBA 字节当成不同设备空间。
+        // gAMA 的整数值 45455 表示约 1/2.2；它与 sRGB 块保持一致，并便于只识别 gAMA 的旧解码器。
+        WriteChunk(output, "sRGB"u8, [0]);
+        Span<byte> gamma = stackalloc byte[4];
+        BinaryPrimitives.WriteUInt32BigEndian(gamma, 45455);
+        WriteChunk(output, "gAMA"u8, gamma);
+
         using var raw = new MemoryStream();
         using (var compressor = new ZLibStream(raw, CompressionLevel.SmallestSize, leaveOpen: true))
         {
             var rowBytes = checked(image.Width * 4);
+            var row = new byte[rowBytes];
             for (var y = 0; y < image.Height; y++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 compressor.WriteByte(0); // 过滤类型 0：保持实现简单、确定且易于验证。
-                compressor.Write(image.Pixels.Span.Slice(y * rowBytes, rowBytes));
+                image.Pixels.Span.Slice(y * rowBytes, rowBytes).CopyTo(row);
+                // straight Alpha 下完全透明像素的 RGB 不参与显示。导出时仍归零隐藏颜色，避免后续缩放、
+                // 合成或错误的预乘处理把画布底色重新带回边缘。
+                for (var offset = 0; offset < row.Length; offset += 4)
+                {
+                    if (row[offset + 3] == 0)
+                    {
+                        row.AsSpan(offset, 3).Clear();
+                    }
+                }
+
+                compressor.Write(row);
             }
         }
 

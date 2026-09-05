@@ -79,9 +79,65 @@
         <Grid>
           <Image x:Name="PreviewImageControl" Margin="12" Source="{Binding PreviewImage}" Stretch="Uniform" />
           <Canvas x:Name="MathLensOverlayCanvas" Margin="12" ClipToBounds="True" IsHitTestVisible="False" IsVisible="{Binding IsMathLensOpen}" />
-          <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#77819D" FontSize="16"
-                     IsVisible="{Binding IsPreviewEmpty}"
-                     Text="正在生成可重复的分形预览…" />
+          <Border
+              x:Name="WorkspaceOverlay"
+              Margin="24"
+              Padding="20"
+              HorizontalAlignment="Center"
+              VerticalAlignment="Center"
+              Background="#EE12182B"
+              BorderBrush="#536181"
+              BorderThickness="1"
+              CornerRadius="8"
+              IsVisible="{Binding HasWorkspaceOverlay}"
+              MaxWidth="620"
+              PointerPressed="HandleWorkspaceOverlayPointerPressed">
+            <StackPanel Spacing="10">
+              <TextBlock FontSize="19" FontWeight="SemiBold" Foreground="#F2F5FF" Text="{Binding WorkspaceTitle}" />
+              <TextBlock Foreground="#BFC7DB" Text="{Binding WorkspaceMessage}" TextWrapping="Wrap" />
+              <StackPanel IsVisible="{Binding ShowGettingStarted}" Spacing="8">
+                <TextBlock Foreground="#FFD166" Text="快速开始：选一个起点 → 调整参数或生成变体 → 组合图层 → 导出 PNG" TextWrapping="Wrap" />
+                <WrapPanel>
+                  <Button Margin="0,0,6,6" Command="{Binding ApplyArtworkPresetCommand}" CommandParameter="amber-bloom" Content="Julia 花火" />
+                  <Button Margin="0,0,6,6" Command="{Binding ApplyArtworkPresetCommand}" CommandParameter="mandelbrot-seahorse" Content="Mandelbrot 海马谷" />
+                  <Button Margin="0,0,6,6" Command="{Binding ApplyArtworkPresetCommand}" CommandParameter="lsystem-plant" Content="L-System 植物" />
+                  <Button Margin="0,0,6,6" Command="{Binding ApplyArtworkPresetCommand}" CommandParameter="attractor-aurora" Content="吸引子极光" />
+                </WrapPanel>
+                <Button HorizontalAlignment="Left" Command="{Binding DismissGettingStartedCommand}" Content="使用当前作品开始" />
+              </StackPanel>
+              <ItemsControl IsVisible="{Binding IsWorkspaceBlocked}" ItemsSource="{Binding CompatibilityReport.Issues}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Border Margin="0,3" Padding="8" Background="#2A2030" CornerRadius="4">
+                      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                        <TextBlock Grid.Column="0" Foreground="#F2BDC5" Text="{Binding Description}" TextWrapping="Wrap" />
+                        <Button Grid.Column="1" Click="HandleRemoveUnavailableCapability" Content="明确移除" />
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <Button
+                  HorizontalAlignment="Left"
+                  Command="{Binding RetryPreviewCommand}"
+                  Content="重新预览"
+                  IsVisible="{Binding IsWorkspaceFailed}" />
+            </StackPanel>
+          </Border>
+          <Border
+              Margin="18"
+              Padding="10"
+              VerticalAlignment="Top"
+              Background="#E6281720"
+              BorderBrush="#C95766"
+              BorderThickness="1"
+              CornerRadius="6"
+              IsVisible="{Binding ShowWorkspaceFailureBanner}">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+              <TextBlock Grid.Column="0" Foreground="#FFE9EC" Text="{Binding WorkspaceMessage}" TextWrapping="Wrap" />
+              <Button Grid.Column="1" Command="{Binding RetryPreviewCommand}" Content="重试" />
+            </Grid>
+          </Border>
         </Grid>
       </Border>
 
@@ -126,6 +182,24 @@
               </Grid>
               <TextBox Text="{Binding BackgroundHex}" PlaceholderText="#RRGGBBAA 背景" />
               <NumericUpDown IsVisible="{Binding IsSeedControlVisible}" Minimum="-9223372036854775808" Maximum="9223372036854775807" Value="{Binding Seed}" PlaceholderText="Seed" />
+            </StackPanel>
+          </Expander>
+
+          <Expander Header="PNG 导出" IsExpanded="False">
+            <StackPanel Margin="0,8,0,0" Spacing="7">
+              <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                <NumericUpDown Grid.Column="0" Minimum="64" Maximum="8192" Value="{Binding ExportWidth}" PlaceholderText="输出宽度" />
+                <NumericUpDown Grid.Column="1" Minimum="64" Maximum="8192" Value="{Binding ExportHeight}" PlaceholderText="输出高度" />
+              </Grid>
+              <CheckBox Foreground="#D4DAED" Content="保持作品宽高比" IsChecked="{Binding LockExportAspectRatio}" />
+              <CheckBox Foreground="#D4DAED" Content="透明画布背景" IsChecked="{Binding ExportTransparentBackground}" />
+              <TextBlock Foreground="#9FB1D3" Text="{Binding ExportSummary}" TextWrapping="Wrap" />
+              <TextBlock Foreground="#F2BDC5" Text="{Binding ExportValidationMessage}" TextWrapping="Wrap" />
+              <TextBlock Foreground="#8791AD" Text="透明模式只清空画布背景；图层、遮罩、渐变和效果自身的 Alpha 保持不变。" TextWrapping="Wrap" />
+              <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                <Button Grid.Column="0" Command="{Binding ResetExportSizeCommand}" Content="恢复画布尺寸" />
+                <Button Grid.Column="1" Command="{Binding ExportPngCommand}" Content="导出 PNG" />
+              </Grid>
             </StackPanel>
           </Expander>
 

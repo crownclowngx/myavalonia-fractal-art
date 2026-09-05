@@ -99,7 +99,9 @@ internal sealed class WorkflowRecipeFiles(
 }
 
 /// <summary>把最终质量作品物化成 Fractal 自己拥有的 PNG Artifact。</summary>
-internal sealed class FractalWorkflowArtifactStore(IArtworkExporter exporter)
+internal sealed class FractalWorkflowArtifactStore(
+    IArtworkExporter exporter,
+    IArtworkExportPlanner exportPlanner)
     : IFractalWorkflowArtifactStore
 {
     private static readonly TimeSpan Retention = TimeSpan.FromHours(24);
@@ -139,7 +141,10 @@ internal sealed class FractalWorkflowArtifactStore(IArtworkExporter exporter)
                 DateTimeOffset.UtcNow);
             var markerBytes = JsonSerializer.SerializeToUtf8Bytes(marker, MarkerOptions);
             await File.WriteAllBytesAsync(markerPath, markerBytes, cancellationToken).ConfigureAwait(false);
-            await exporter.ExportAsync(artwork, sourcePath, cancellationToken).ConfigureAwait(false);
+            var plan = exportPlanner.Create(
+                artwork,
+                new ArtworkExportRequest(artwork.Canvas.Width, artwork.Canvas.Height, false));
+            await exporter.ExportAsync(plan, sourcePath, cancellationToken).ConfigureAwait(false);
             var information = new FileInfo(sourcePath);
             await using var stream = new FileStream(
                 sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read,

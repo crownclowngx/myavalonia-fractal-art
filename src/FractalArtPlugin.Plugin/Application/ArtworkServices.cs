@@ -220,7 +220,7 @@ public interface IAtomicFileWriter
 
 public interface IArtworkExporter
 {
-    Task ExportAsync(ArtworkDefinition artwork, string path, CancellationToken cancellationToken);
+    Task ExportAsync(ArtworkExportPlan plan, string path, CancellationToken cancellationToken);
 }
 
 internal sealed class ArtworkExporter(
@@ -228,16 +228,17 @@ internal sealed class ArtworkExporter(
     IPngEncoder encoder,
     IAtomicFileWriter writer) : IArtworkExporter
 {
-    public async Task ExportAsync(ArtworkDefinition artwork, string path, CancellationToken cancellationToken)
+    public async Task ExportAsync(ArtworkExportPlan plan, string path, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(plan);
         if (string.IsNullOrWhiteSpace(path))
         {
             throw new ArgumentException("导出路径不能为空。", nameof(path));
         }
 
         var result = await pipeline.RenderAsync(
-            artwork,
-            RenderContext.ForExport(artwork),
+            plan.Artwork,
+            plan.Context,
             cancellationToken).ConfigureAwait(false);
         var png = encoder.Encode(result.Image, cancellationToken);
         await writer.WriteAsync(path, png, cancellationToken).ConfigureAwait(false);

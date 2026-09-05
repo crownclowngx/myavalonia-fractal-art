@@ -74,6 +74,19 @@ public sealed partial class FractalArtworkView : UserControl
         }
     }
 
+    private void HandleRemoveUnavailableCapability(object? sender, RoutedEventArgs eventArgs)
+    {
+        if (sender is Button { DataContext: ArtworkCompatibilityIssue issue } &&
+            DataContext is FractalArtworkDocument document)
+        {
+            document.RemoveUnavailableCapabilityCommand.Execute(issue);
+        }
+    }
+
+    /// <summary>工作区卡片上的按钮属于会话操作，不能继续冒泡成画布平移手势。</summary>
+    private void HandleWorkspaceOverlayPointerPressed(object? sender, PointerPressedEventArgs eventArgs) =>
+        eventArgs.Handled = true;
+
     /// <summary>
     /// 只变换上一张 Bitmap 的呈现，不生成新像素，也不参与保存、导出或指纹。
     /// 当 Document 提交真实帧时状态恢复为 Identity，本方法同步移除全部插值变换。

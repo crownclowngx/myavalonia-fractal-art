@@ -435,6 +435,137 @@ public sealed class DocumentTests
         Assert.Equal(before.Content.Payload.GetRawText(), after.Content.Payload.GetRawText());
     }
 
+    [Fact]
+    public async Task 新建引导是会话态且恢复作品默认不显示()
+    {
+        using var firstFixture = new DocumentFixture();
+        using var restoredFixture = new DocumentFixture();
+        using var document = firstFixture.CreateDocument();
+        await document.InitializeAsync(new NewDocumentActivation("G0011 新建"), CancellationToken.None);
+        var before = await document.CaptureSaveSnapshotAsync(CancellationToken.None);
+
+        Assert.True(document.ShowGettingStarted);
+        Assert.Equal(ArtworkWorkspacePhase.Ready, document.WorkspacePhase);
+        document.DismissGettingStartedCommand.Execute(null);
+        var after = await document.CaptureSaveSnapshotAsync(CancellationToken.None);
+
+        Assert.False(document.ShowGettingStarted);
+        Assert.False(document.IsDirty);
+        Assert.Equal(before.Content.Payload.GetRawText(), after.Content.Payload.GetRawText());
+
+        using var restored = restoredFixture.CreateDocument();
+        await restored.InitializeAsync(
+            new RestoreDocumentActivation("G0011 恢复", before.Content),
+            CancellationToken.None);
+        Assert.False(restored.ShowGettingStarted);
+    }
+
+    [Fact]
+    public async Task 导出尺寸透明选项不进入作品Dirty历史或快照()
+    {
+        using var fixture = new DocumentFixture();
+        using var document = fixture.CreateDocument();
+        await document.InitializeAsync(new NewDocumentActivation("G0011 导出"), CancellationToken.None);
+        var before = await document.CaptureSaveSnapshotAsync(CancellationToken.None);
+
+        document.ExportWidth = 3840;
+        document.ExportTransparentBackground = true;
+
+        Assert.Equal(3840, document.ExportWidth);
+        Assert.Equal(2560, document.ExportHeight);
+        Assert.Contains("透明", document.ExportSummary, StringComparison.Ordinal);
+        Assert.Empty(document.ExportValidationMessage);
+        Assert.False(document.IsDirty);
+        Assert.False(document.CanUndo);
+        var after = await document.CaptureSaveSnapshotAsync(CancellationToken.None);
+        Assert.Equal(before.Content.Payload.GetRawText(), after.Content.Payload.GetRawText());
+
+        document.ResetExportSizeCommand.Execute(null);
+        Assert.Equal((1200, 800), (document.ExportWidth, document.ExportHeight));
+    }
+
+    [Fact]
+    public async Task 导出预检失败不打开文件框且成功时传递已捕获计划()
+    {
+        using var fixture = new DocumentFixture();
+        var exporter = new RecordingExporter();
+        var dialog = new RecordingExportDialog("result.png");
+        using var document = fixture.CreateDocument(exporter: exporter, exportDialog: dialog);
+        await document.InitializeAsync(new NewDocumentActivation("G0011 预检"), CancellationToken.None);
+
+        document.LockExportAspectRatio = false;
+        document.ExportWidth = 8193;
+        await document.ExportPngCommand.ExecuteAsync(null);
+        Assert.Equal(0, dialog.Calls);
+        Assert.Null(exporter.Plan);
+
+        document.ExportWidth = 3840;
+        document.ExportHeight = 2160;
+        document.ExportTransparentBackground = true;
+        await document.ExportPngCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, dialog.Calls);
+        Assert.NotNull(exporter.Plan);
+        Assert.Equal((3840, 2160), (exporter.Plan.Context.Width, exporter.Plan.Context.Height));
+        Assert.True(exporter.Plan.Request.TransparentBackground);
+    }
+
+    [Fact]
+    public async Task 已有成功预览后的失败保留指纹并可重试恢复()
+    {
+        var pipeline = new SwitchableFailurePipeline();
+        using var fixture = new DocumentFixture(pipeline);
+        using var document = fixture.CreateDocument();
+        await document.InitializeAsync(new NewDocumentActivation("G0011 错误态"), CancellationToken.None);
+        var fingerprint = document.LastPreviewFingerprint;
+
+        pipeline.ShouldFail = true;
+        await document.RenderPreviewNowAsync();
+
+        Assert.Equal(ArtworkWorkspacePhase.Failed, document.WorkspacePhase);
+        Assert.Equal(fingerprint, document.LastPreviewFingerprint);
+        Assert.Contains("最后一张成功画面", document.WorkspaceMessage, StringComparison.Ordinal);
+
+        pipeline.ShouldFail = false;
+        await document.RetryPreviewCommand.ExecuteAsync(null);
+        Assert.Equal(ArtworkWorkspacePhase.Ready, document.WorkspacePhase);
+        Assert.Equal(fingerprint, document.LastPreviewFingerprint);
+    }
+
+    [Fact]
+    public async Task 缺失能力恢复时不渲染且显式移除可撤销()
+    {
+        using var fixture = new DocumentFixture();
+        using var document = fixture.CreateDocument();
+        var validator = new ArtworkValidator();
+        var codec = new ArtworkSnapshotCodec(validator);
+        var source = ArtworkDefinition.CreateDefault();
+        var unavailable = new UnavailableLayerDefinition(
+            "future-layer", "未来图层", true, 1, LayerBlendMode.Normal,
+            LayerTransformDefinition.Identity, null, "future.layer", 2, "{\"value\":7}");
+        var blocked = source with { Layers = source.Layers.Append(unavailable).ToArray() };
+
+        await document.InitializeAsync(
+            new RestoreDocumentActivation("缺失能力", codec.Encode(blocked)),
+            CancellationToken.None);
+
+        Assert.Equal(0, fixture.Pipeline.CallCount);
+        Assert.Equal(ArtworkWorkspacePhase.Blocked, document.WorkspacePhase);
+        var issue = Assert.Single(document.CompatibilityReport.Issues);
+        document.RemoveUnavailableCapabilityCommand.Execute(issue);
+        await WaitUntilAsync(() => document.WorkspacePhase == ArtworkWorkspacePhase.Ready);
+
+        Assert.True(document.CompatibilityReport.CanRender);
+        Assert.True(document.IsDirty);
+        Assert.True(document.CanUndo);
+
+        document.UndoCommand.Execute(null);
+        await WaitUntilAsync(() => document.WorkspacePhase == ArtworkWorkspacePhase.Blocked);
+        Assert.False(document.CompatibilityReport.CanRender);
+        var restoredUnavailable = Assert.IsType<UnavailableLayerDefinition>(document.Artwork.Layers[^1]);
+        Assert.Equal(unavailable.OpaquePayload, restoredUnavailable.OpaquePayload);
+    }
+
     private static async Task WaitUntilAsync(Func<bool> predicate)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -458,7 +589,9 @@ public sealed class DocumentTests
 
         public FractalArtworkDocument CreateDocument(
             IImageLabArtEffectExportCoordinator? imageLabCoordinator = null,
-            IImageLabExportDialog? imageLabExportDialog = null)
+            IImageLabExportDialog? imageLabExportDialog = null,
+            IArtworkExporter? exporter = null,
+            IArtworkExportDialog? exportDialog = null)
         {
             var validator = new ArtworkValidator();
             var generator = new VariationGenerator(validator);
@@ -477,8 +610,8 @@ public sealed class DocumentTests
                 new ArtworkSnapshotCodec(validator),
                 _pipeline,
                 new NullPreviewFactory(),
-                new NullExporter(),
-                new NullExportDialog(),
+                exporter ?? new NullExporter(),
+                exportDialog ?? new NullExportDialog(),
                 new ArtworkHistory(),
                 new ArtisticParameterMapper(),
                 new VariationExplorer(generator, _pipeline),
@@ -617,14 +750,54 @@ public sealed class DocumentTests
 
     private sealed class NullExporter : IArtworkExporter
     {
-        public Task ExportAsync(ArtworkDefinition artwork, string path, CancellationToken cancellationToken) =>
+        public Task ExportAsync(ArtworkExportPlan plan, string path, CancellationToken cancellationToken) =>
             Task.CompletedTask;
+    }
+
+    private sealed class SwitchableFailurePipeline : IArtworkRenderPipeline
+    {
+        public bool ShouldFail { get; set; }
+
+        public Task<ArtworkRenderResult> RenderAsync(
+            ArtworkDefinition artwork,
+            RenderContext context,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ShouldFail
+                ? Task.FromException<ArtworkRenderResult>(new InvalidOperationException("测试渲染器失败"))
+                : Task.FromResult(CreateResult(ControlledPipeline.CreateImage(artwork.Julia.ConstantReal)));
+        }
     }
 
     private sealed class NullExportDialog : IArtworkExportDialog
     {
         public Task<string?> PickPngPathAsync(string suggestedName, CancellationToken cancellationToken) =>
             Task.FromResult<string?>(null);
+    }
+
+    private sealed class RecordingExporter : IArtworkExporter
+    {
+        public ArtworkExportPlan? Plan { get; private set; }
+
+        public Task ExportAsync(ArtworkExportPlan plan, string path, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Plan = plan;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class RecordingExportDialog(string? path) : IArtworkExportDialog
+    {
+        public int Calls { get; private set; }
+
+        public Task<string?> PickPngPathAsync(string suggestedName, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Calls++;
+            return Task.FromResult(path);
+        }
     }
 
     private sealed class TestLifetime : IDocumentLifetime, IDisposable

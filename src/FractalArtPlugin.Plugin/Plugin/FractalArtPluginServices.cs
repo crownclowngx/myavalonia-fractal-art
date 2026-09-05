@@ -69,6 +69,8 @@ public static class FractalArtPluginServices
         services.AddScoped<IVariationExplorer, VariationExplorer>();
         services.AddSingleton<IArtworkPresetCatalog, ArtworkPresetCatalog>();
         services.AddSingleton<IArtworkLayerEditor, ArtworkLayerEditor>();
+        services.AddSingleton<IArtworkCompatibilityService, ArtworkCompatibilityService>();
+        services.AddSingleton<IArtworkExportPlanner, ArtworkExportPlanner>();
         services.AddSingleton<IPngEncoder, PngEncoder>();
         services.AddSingleton<IAtomicFileWriter, AtomicFileWriter>();
         services.AddScoped<IArtworkExporter, ArtworkExporter>();

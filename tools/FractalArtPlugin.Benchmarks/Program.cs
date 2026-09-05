@@ -3,7 +3,9 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using FractalArtPlugin.Domain.Artwork;
+using FractalArtPlugin.Domain.Fractals.Attractor;
 using FractalArtPlugin.Domain.Fractals.Julia;
+using FractalArtPlugin.Domain.Fractals.RecursiveTree;
 using FractalArtPlugin.Domain.Rendering;
 using FractalArtPlugin.Numerics;
 
@@ -62,13 +64,16 @@ foreach (var scenario in scenarios)
         var stopwatch = Stopwatch.StartNew();
         latest = await generator.GenerateAsync(definition, context, CancellationToken.None);
         stopwatch.Stop();
+        process.Refresh();
         samples.Add(new Sample(
             stopwatch.Elapsed.TotalMilliseconds,
             GC.GetTotalAllocatedBytes(precise: true) - allocated,
             GC.CollectionCount(0) - collections[0],
             GC.CollectionCount(1) - collections[1],
             GC.CollectionCount(2) - collections[2],
-            (Process.GetCurrentProcess().TotalProcessorTime - cpu).TotalMilliseconds));
+            (Process.GetCurrentProcess().TotalProcessorTime - cpu).TotalMilliseconds,
+            process.WorkingSet64,
+            process.PeakWorkingSet64));
     }
 
     var ordered = samples.OrderBy(sample => sample.ElapsedMilliseconds).ToArray();
@@ -125,6 +130,70 @@ for (var run = 0; run < 5; run++)
 var orderedCancellation = cancellationResponses.Order().ToArray();
 var cancellationP95 = orderedCancellation[(int)Math.Ceiling(orderedCancellation.Length * 0.95) - 1];
 
+// G0011 在原有高精度专项之外补充静态闭环的四类代表工作负载。这里记录趋势证据而不设置机器相关的
+// 毫秒阈值；真正的硬门禁仍由像素、采样、缓存字节和取消契约等确定性预算承担。
+var closureArtwork = ArtworkDefinition.CreateDefault();
+var closureContext = RenderContext.ForThumbnail(closureArtwork, 320);
+var gradientMapper = new LinearGradientMapper();
+var treeGenerator = new RecursiveTreePathGenerator();
+var pathRenderer = new PathStrokeRenderer();
+var attractorDefinition = closureArtwork.StrangeAttractor with { SampleCount = 200_000, GlowEnabled = false };
+var attractorKernels = new IAttractorFormulaKernel[] { new CliffordAttractorKernel(), new DeJongAttractorKernel() };
+var attractorGenerator = new StrangeAttractorPointGenerator(attractorKernels);
+var densityRenderer = new PointDensityRenderer();
+var densityMapper = new DensityGradientMapper();
+var compositor = new LayerCompositor();
+var masterEffects = new MasterEffectRenderer();
+var closureScenarios = new[]
+{
+    await MeasureClosureAsync("escape-time-rgba", async token =>
+    {
+        var field = await generator.GenerateAsync(closureArtwork.Julia, closureContext, token);
+        return gradientMapper.Map(field, closureArtwork.Gradient, token);
+    }),
+    await MeasureClosureAsync("recursive-path-rgba", token =>
+    {
+        var path = treeGenerator.Generate(closureArtwork.RecursiveTree, closureArtwork.Seed, token);
+        return Task.FromResult(pathRenderer.Render(
+            path,
+            new PathStrokeDefinition(closureArtwork.RecursiveTree.StrokeWidth, 0.82),
+            closureArtwork.Gradient,
+            closureArtwork.Canvas.Background,
+            closureContext,
+            token));
+    }),
+    await MeasureClosureAsync("attractor-density-rgba", async token =>
+    {
+        var cloud = await attractorGenerator.GenerateAsync(
+            attractorDefinition, closureArtwork.Seed, closureContext with { PointSampleBudget = 200_000 }, token);
+        var field = await densityRenderer.RenderAsync(cloud, attractorDefinition, closureContext, token);
+        return densityMapper.Map(field, closureArtwork.Gradient, token);
+    }),
+    await MeasureClosureAsync("multi-layer-effects", token =>
+    {
+        var current = compositor.CreateBackground(320, 180, new RgbaColor(10, 14, 28));
+        for (var layer = 0; layer < 3; layer++)
+        {
+            current = compositor.Composite(
+                current,
+                CreateSyntheticLayer(320, 180, layer),
+                0.72,
+                layer == 1 ? LayerBlendMode.Screen : LayerBlendMode.Normal,
+                null,
+                token);
+        }
+
+        return Task.FromResult(masterEffects.Apply(
+            current,
+            new EffectChainDefinition(1,
+            [
+                new ToneEffectDefinition(true, 0.05, 0.08, 1.1),
+                new BloomEffectDefinition(true, 0.72, 2.4, 0.8)
+            ]),
+            token));
+    })
+};
+
 var report = new BenchmarkReport(
     DateTimeOffset.Now,
     Environment.MachineName,
@@ -133,8 +202,9 @@ var report = new BenchmarkReport(
     Environment.ProcessorCount,
     Environment.GetEnvironmentVariable("PROCESSOR_IDENTIFIER") ?? "unknown",
     GitCommit(),
-    "dotnet run --project tools/FractalArtPlugin.Benchmarks -c Release -- <output.json>",
+    "dotnet run --project tools/FractalArtPlugin.Benchmarks -c Debug -- <output.json>",
     results,
+    closureScenarios,
     cancellationP95,
     cancellationResponses);
 var json = JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true });
@@ -153,6 +223,63 @@ static string Fingerprint(ScalarField field)
     }
 
     return Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant()[..16];
+}
+
+static async Task<ClosureScenarioResult> MeasureClosureAsync(
+    string name,
+    Func<CancellationToken, Task<ImageSurface>> render)
+{
+    _ = await render(CancellationToken.None);
+    var samples = new List<ClosureSample>();
+    ImageSurface? latest = null;
+    for (var run = 0; run < 3; run++)
+    {
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+        var allocated = GC.GetTotalAllocatedBytes(precise: true);
+        var process = Process.GetCurrentProcess();
+        process.Refresh();
+        var workingSet = process.WorkingSet64;
+        var stopwatch = Stopwatch.StartNew();
+        latest = await render(CancellationToken.None);
+        stopwatch.Stop();
+        process.Refresh();
+        samples.Add(new ClosureSample(
+            stopwatch.Elapsed.TotalMilliseconds,
+            GC.GetTotalAllocatedBytes(precise: true) - allocated,
+            process.WorkingSet64 - workingSet,
+            process.WorkingSet64,
+            process.PeakWorkingSet64));
+    }
+
+    var ordered = samples.OrderBy(sample => sample.ElapsedMilliseconds).ToArray();
+    return new ClosureScenarioResult(
+        name,
+        latest!.Width,
+        latest.Height,
+        ordered[ordered.Length / 2].ElapsedMilliseconds,
+        ordered[(int)Math.Ceiling(ordered.Length * 0.95) - 1].ElapsedMilliseconds,
+        Convert.ToHexString(SHA256.HashData(latest.Pixels.Span)).ToLowerInvariant()[..16],
+        samples);
+}
+
+static ImageSurface CreateSyntheticLayer(int width, int height, int layer)
+{
+    var pixels = new byte[checked(width * height * 4)];
+    for (var y = 0; y < height; y++)
+    {
+        for (var x = 0; x < width; x++)
+        {
+            var offset = (y * width + x) * 4;
+            pixels[offset] = (byte)((x + layer * 31) % 256);
+            pixels[offset + 1] = (byte)((y * 2 + layer * 47) % 256);
+            pixels[offset + 2] = (byte)((x + y + layer * 59) % 256);
+            pixels[offset + 3] = (byte)(96 + layer * 48);
+        }
+    }
+
+    return new ImageSurface(width, height, pixels);
 }
 
 static IReadOnlyDictionary<string, PointResult> ReferencePoints(ScalarField field)
@@ -204,7 +331,25 @@ internal sealed record Sample(
     int Gen0Collections,
     int Gen1Collections,
     int Gen2Collections,
-    double CpuMilliseconds);
+    double CpuMilliseconds,
+    long WorkingSetBytes,
+    long PeakWorkingSetBytes);
+
+internal sealed record ClosureSample(
+    double ElapsedMilliseconds,
+    long AllocatedBytes,
+    long WorkingSetDeltaBytes,
+    long WorkingSetBytes,
+    long PeakWorkingSetBytes);
+
+internal sealed record ClosureScenarioResult(
+    string Name,
+    int Width,
+    int Height,
+    double MedianMilliseconds,
+    double P95Milliseconds,
+    string Fingerprint,
+    IReadOnlyList<ClosureSample> Samples);
 
 internal sealed record PointResult(int X, int Y, float Value, bool Escaped);
 
@@ -229,5 +374,6 @@ internal sealed record BenchmarkReport(
     string GitCommit,
     string Command,
     IReadOnlyList<ScenarioResult> Scenarios,
+    IReadOnlyList<ClosureScenarioResult> StaticClosureScenarios,
     double CancellationResponseMilliseconds,
     IReadOnlyList<double> CancellationSamplesMilliseconds);

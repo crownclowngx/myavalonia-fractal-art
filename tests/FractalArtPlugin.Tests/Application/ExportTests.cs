@@ -17,7 +17,7 @@ public sealed class ExportTests
             Canvas = ArtworkDefinition.CreateDefault().Canvas with { Width = 640, Height = 360 }
         };
 
-        await exporter.ExportAsync(artwork, "ignored.png", CancellationToken.None);
+        await exporter.ExportAsync(CreatePlan(artwork), "ignored.png", CancellationToken.None);
 
         Assert.NotNull(pipeline.Context);
         Assert.Equal(640, pipeline.Context.Width);
@@ -37,7 +37,7 @@ public sealed class ExportTests
         cancellation.Cancel();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            exporter.ExportAsync(ArtworkDefinition.CreateDefault(), "ignored.png", cancellation.Token));
+            exporter.ExportAsync(CreatePlan(ArtworkDefinition.CreateDefault()), "ignored.png", cancellation.Token));
 
         Assert.Null(pipeline.Context);
         Assert.Empty(writer.Content);
@@ -101,6 +101,14 @@ public sealed class ExportTests
                 new ImageSurface(1, 1, [10, 20, 30, 255]),
                 new ArtworkRenderExecutionSummary([], ["test"], 1)));
         }
+    }
+
+    private static ArtworkExportPlan CreatePlan(ArtworkDefinition artwork)
+    {
+        var validator = new ArtworkValidator();
+        return new ArtworkExportPlanner(validator, validator).Create(
+            artwork,
+            new ArtworkExportRequest(artwork.Canvas.Width, artwork.Canvas.Height, false));
     }
 
     private sealed class CapturingWriter : IAtomicFileWriter

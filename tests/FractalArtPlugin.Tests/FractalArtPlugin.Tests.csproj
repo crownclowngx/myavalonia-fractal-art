@@ -15,4 +15,8 @@
     <ProjectReference Include="..\..\src\FractalArtPlugin.Plugin\FractalArtPlugin.Plugin.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Fixtures\artwork-migrations.json" />
+  </ItemGroup>
+
 </Project>

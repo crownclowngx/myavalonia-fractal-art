@@ -70,22 +70,12 @@ internal sealed class VariationExplorer(
         SemaphoreSlim gate,
         CancellationToken cancellationToken)
     {
-        var ratio = Math.Min(1d, Math.Min(
-            (double)ThumbnailMaximumEdge / source.Canvas.Width,
-            (double)ThumbnailMaximumEdge / source.Canvas.Height));
-        var width = Math.Max(1, (int)Math.Round(source.Canvas.Width * ratio));
-        var height = Math.Max(1, (int)Math.Round(source.Canvas.Height * ratio));
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             var candidateArtwork = source.ApplyVariationRecipe(candidate.Recipe);
-            var previewArtwork = candidateArtwork with
-            {
-                Canvas = candidateArtwork.Canvas with { Width = width, Height = height },
-                Presentation = candidateArtwork.Presentation with { HighQualityPreview = false }
-            };
             // 每张缩略图内部使用单线程；与外层 3 路并发组合后，整批不会放大成 3×CPU 的嵌套并行。
-            var context = RenderContext.ForPreview(previewArtwork) with { MaxDegreeOfParallelism = 1 };
+            var context = RenderContext.ForThumbnail(candidateArtwork, ThumbnailMaximumEdge);
             var result = await renderPipeline.RenderAsync(candidateArtwork, context, cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             return (index, new RenderedVariation(candidate, result.Image, result.Execution.FullyFromCache));

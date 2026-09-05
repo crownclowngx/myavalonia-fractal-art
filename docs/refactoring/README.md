@@ -1,4 +1,4 @@
-# G0001–G0010 实施档案
+# G0001–G0011 实施档案
 
 本目录独立保存 Fractal Art 产品化重构的专业文档，避免把阶段性决策、实施细节和验收证据散落在产品愿景中。
 产品长期路线仍以 [`product-shape-and-implementation-plan.md`](../product-shape-and-implementation-plan.md) 为基线。
@@ -18,6 +18,7 @@
 | G0008 多图层、遮罩与跨分形组合 | [计划](G0008/plan.md) | [合成设计](G0008/composition-design.md) / [方案](G0008/implementation.md) | [结果](G0008/result.md) |
 | G0009 第三类数据形态——点云与密度 | [计划](G0009/plan.md) | [点云与密度设计](G0009/point-cloud-density-design.md) / [方案](G0009/implementation.md) | [结果](G0009/result.md) |
 | G0010 数学透镜 | [计划](G0010/plan.md) | [数学透镜设计](G0010/math-lens-design.md) / [方案](G0010/implementation.md) | [结果](G0010/result.md) |
+| G0011 静态作品闭环封板 | [计划](G0011/plan.md) | [闭环设计](G0011/static-artwork-closure-design.md) / [方案](G0011/implementation.md) | [结果](G0011/result.md) |
 
 G0003 后续的高精度性能与 Domain 模块化工作已独立实施并完成本地自动化，见
 [专项计划](G0003/precision-performance/plan.md)、[优化设计](G0003/precision-performance/optimization-design.md)、
